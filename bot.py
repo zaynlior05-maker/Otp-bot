@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
@@ -12,6 +13,13 @@ logger = logging.getLogger(__name__)
 # Fetch Variables from Railway
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+# Fetch Crypto Wallet Addresses from Railway
+LTC_ADDRESS = os.getenv("LTC_ADDRESS", "YOUR_LTC_ADDRESS_NOT_SET")
+BTC_ADDRESS = os.getenv("BTC_ADDRESS", "YOUR_BTC_ADDRESS_NOT_SET")
+USDT_TRC20_ADDRESS = os.getenv("USDT_TRC20_ADDRESS", "YOUR_USDT_TRC20_ADDRESS_NOT_SET")
+USDT_ERC20_ADDRESS = os.getenv("USDT_ERC20_ADDRESS", "YOUR_USDT_ERC20_ADDRESS_NOT_SET")
+ETH_ADDRESS = os.getenv("ETH_ADDRESS", "YOUR_ETH_ADDRESS_NOT_SET")
 
 # Global Memory Variables (Resets to these defaults on Railway Restart)
 ADMINS = set()
@@ -47,7 +55,7 @@ DYNAMIC_TEXT = {
         "💳 **PAYMENT METHODS**\n"
         "➖➖➖➖➖➖➖➖➖➖\n\n"
         "🔗 **DEPOSIT VIA GATEWAY**\n"
-        "├ Accepted: Crypto / Cards\n"
+        "├ Accepted: Crypto Only\n"
         "└ Status: **LIVE**\n\n"
         "💰 **ACCOUNT BALANCE:** £0.00\n\n"
         "👇 **SELECT ACTION**"
@@ -81,9 +89,9 @@ def get_main_menu():
     keyboard = [
         [KeyboardButton("📊 DASHBOARD")],
         [KeyboardButton("💳 PAYMENT"), KeyboardButton("⚡ FEATURES"), KeyboardButton("⚙️ SYSTEM")],
-        [KeyboardButton("🖋️ SUBSCRIPTION"), KeyboardButton("🔑 ACTIVATE")],
+        [KeyboardButton("🖋️ SUBSCRIPTION")], 
         [KeyboardButton("❓ FAQ"), KeyboardButton("📈 RESULTS"), KeyboardButton("📋 COMMANDS")],
-        [KeyboardButton("👤 PROFILE"), KeyboardButton("💬 SUPPORT"), KeyboardButton("🤝 PARTNER")]
+        [KeyboardButton("👤 PROFILE"), KeyboardButton("💬 SUPPORT")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
 
@@ -105,7 +113,6 @@ def get_admin_templates_menu():
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    # Replaces {name} with the user's actual first name dynamically
     welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", update.effective_user.first_name)
     USER_STATES[update.effective_user.id] = None
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown")
@@ -153,7 +160,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         DYNAMIC_TEXT[template_key] = text
         USER_STATES[user_id] = None
         await update.message.reply_text(f"✅ **Template Updated Successfully!**\nThe new text for '{template_key.upper()}' is now live.", parse_mode="Markdown")
-        # Return to templates menu
         await update.message.reply_text("⚙️ **TEMPLATE EDITOR**\nSelect a template to modify:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
         return
 
@@ -185,12 +191,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💬 SUPPORT ↗", url="https://t.me/telegram"), InlineKeyboardButton("📢 CHANNEL ↗", url="https://t.me/telegram")]])
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
 
-    elif text == "🤝 PARTNER":
-        bot_username = context.bot.username if context.bot.username else "UtilityBot"
-        msg = f"🤝 **PARTNER PANEL**\n➖➖➖➖➖➖➖➖➖➖\n\n🔗 **YOUR REFERRAL LINK:**\n`https://t.me/{bot_username}?start=ref_{update.effective_user.id}`\n\n➖➖➖➖➖➖➖➖➖➖\n📊 **CLICK STATISTICS:**\n├ 📅 **TODAY:** 0 clicks\n├ 📅 **THIS WEEK:** 0 clicks\n├ 📅 **THIS MONTH:** 0 clicks\n└ 📈 **ALL TIME:** 0 clicks\n\n👥 **REFERRAL STATS:**\n├ 👤 **TOTAL USERS:** 0 users\n├ 📊 **CONVERSION:** 0.0%\n└ 💎 **COMMISSION RATE:** 50%\n\n➖➖➖➖➖➖➖➖➖➖\n💰 **EARNINGS:**\n├ 📅 **TODAY:** £0.00\n├ 📅 **THIS WEEK:** £0.00\n├ 📅 **THIS MONTH:** £0.00\n└ 💵 **ALL TIME:** £0.00\n\n➖➖➖➖➖➖➖➖➖➖"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("📊 Generate Stats Image", callback_data="partner_image"), InlineKeyboardButton("📩 Download CSV Report", callback_data="partner_csv")], [InlineKeyboardButton("🔄 Refresh Stats", callback_data="partner_refresh")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
-
     elif text == "🖋️ SUBSCRIPTION":
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💳 BUY BASIC (£20)", callback_data="sub_basic")], [InlineKeyboardButton("💳 BUY PRO (£50)", callback_data="sub_pro")], [InlineKeyboardButton("💳 BUY ULTRA (£90)", callback_data="sub_ultra")]])
         await update.message.reply_text(DYNAMIC_TEXT["subscription"], reply_markup=markup, parse_mode="Markdown")
@@ -214,7 +214,10 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user_id = query.from_user.id
-    await query.answer()
+    
+    # Do not answer query immediately for coin selection so we can show loading screen
+    if not query.data.startswith("coin_"):
+        await query.answer()
 
     # --- ADMIN CALLBACKS ---
     if query.data == "admin_home":
@@ -245,31 +248,81 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             ADMINS.discard(user_id)
             await query.message.edit_text("🚪 **You have successfully logged out of the Admin Panel.**", parse_mode="Markdown")
 
-    # --- NORMAL CALLBACKS ---
+    # --- PAYMENT & CRYPTO CALLBACKS ---
     elif query.data.startswith("sub_"):
         await query.answer("💳 Redirecting to payment processor...", show_alert=True)
         
     elif query.data == "pay_add":
         msg = "💰 **DEPOSIT FUNDS**\n➖➖➖➖➖➖➖➖➖➖\n\n💵 **SELECT DEPOSIT AMOUNT**\n├ Minimum Deposit: £15\n└ Currency: GBP (£)\n\n👇 **CHOOSE AN AMOUNT BELOW**\n➖➖➖➖➖➖➖➖➖➖"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("£15", callback_data="dep_15"), InlineKeyboardButton("£30", callback_data="dep_30")], [InlineKeyboardButton("£50", callback_data="dep_50"), InlineKeyboardButton("£100", callback_data="dep_100")], [InlineKeyboardButton("💳 PAY WITH CARD", callback_data="dep_card")], [InlineKeyboardButton("🪙 PAY WITH CRYPTO", callback_data="dep_crypto")], [InlineKeyboardButton("🔙 BACK", callback_data="pay_back")]])
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("£15", callback_data="amount_15"), InlineKeyboardButton("£30", callback_data="amount_30")], 
+            [InlineKeyboardButton("£50", callback_data="amount_50"), InlineKeyboardButton("£100", callback_data="amount_100")], 
+            [InlineKeyboardButton("🔙 BACK", callback_data="pay_cancel")]
+        ])
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
-    elif query.data == "pay_back":
+    elif query.data.startswith("amount_"):
+        amount = query.data.split("_")[1]
+        msg = "🪙 **SELECT CRYPTOCURRENCY**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease select a cryptocurrency for your deposit:\n\n*(Note: Make sure to select the correct network!)*"
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("LTC", callback_data=f"coin_LTC_{amount}"), InlineKeyboardButton("BTC", callback_data=f"coin_BTC_{amount}")],
+            [InlineKeyboardButton("USDT (TRC20)", callback_data=f"coin_USDT-TRC20_{amount}"), InlineKeyboardButton("USDT (ERC20)", callback_data=f"coin_USDT-ERC20_{amount}")],
+            [InlineKeyboardButton("ETH", callback_data=f"coin_ETH_{amount}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]
+        ])
+        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+
+    elif query.data.startswith("coin_"):
+        # Answer the query manually since we skipped it above
+        await query.answer()
+        
+        parts = query.data.split("_")
+        coin = parts[1]
+        amount = parts[2]
+
+        # Simulating the generating invoice screen
+        await query.message.edit_text("⏳ *Hold on, generating invoice...*", parse_mode="Markdown")
+        await asyncio.sleep(1.5)
+
+        # Mapping to the correct address from Railway variables
+        address = "NOT_SET"
+        if coin == "LTC": address = LTC_ADDRESS
+        elif coin == "BTC": address = BTC_ADDRESS
+        elif coin == "USDT-TRC20": address = USDT_TRC20_ADDRESS
+        elif coin == "USDT-ERC20": address = USDT_ERC20_ADDRESS
+        elif coin == "ETH": address = ETH_ADDRESS
+
+        # Rough conversion estimates just for visual display (e.g. £15 to Crypto)
+        conversion_rates = {"LTC": 0.018, "BTC": 0.000021, "USDT-TRC20": 1.28, "USDT-ERC20": 1.28, "ETH": 0.00038}
+        estimated_crypto = float(amount) * conversion_rates.get(coin, 1)
+
+        msg = (
+            f"🪙 **{coin} DEPOSIT**\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n\n"
+            f"⚠️ **WARNING:** Send ONLY **{coin}** to this address. Sending any other coin will result in permanent loss.\n\n"
+            f"💰 **Amount Expected:** `~{estimated_crypto:.4f}` {coin} (£{amount})\n"
+            f"📬 **Deposit Address:**\n`{address}`\n\n"
+            f"*(Tap the address above to copy it)*\n\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n"
+            f"⏳ Waiting for payment..."
+        )
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]
+        ])
+        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+
+    elif query.data == "check_payment":
+        await query.answer("⏳ Payment not detected on the blockchain yet. Please allow 5-15 minutes for confirmations.", show_alert=True)
+
+    elif query.data == "pay_cancel":
+        # Returns user to the base payment menu
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
-        
-    elif query.data.startswith("dep_"):
-        await query.answer("🔄 Generating deposit invoice...", show_alert=True)
 
+    # --- MISC CALLBACKS ---
     elif query.data == "pay_history":
         await query.answer("📜 No transaction records found.", show_alert=True)
-        
-    elif query.data == "partner_image":
-        await query.answer("🖼️ Generating image...", show_alert=True)
-    elif query.data == "partner_csv":
-        await query.answer("📩 CSV generation pending.", show_alert=True)
-    elif query.data == "partner_refresh":
-        await query.answer("🔄 Stats refreshed successfully.", show_alert=False)
         
     elif query.data == "faq_ask":
         await query.message.edit_text("📝 Please type your question.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]]))

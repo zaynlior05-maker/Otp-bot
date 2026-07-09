@@ -11,12 +11,22 @@ logger = logging.getLogger(__name__)
 
 # Fetch Variables from Railway
 TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123") # Defaults to admin123 if not set in Railway
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
-# Global Memory Variables (Resets on Railway Restart)
+# Global Memory Variables (Resets to these defaults on Railway Restart)
 ADMINS = set()
 USER_STATES = {}
 DYNAMIC_TEXT = {
+    "welcome": (
+        "👋 **WELCOME TO UTILITY PANEL**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "🧠 **SYSTEM STATUS**\n"
+        "├ 🟢 **STATUS:** Operational\n"
+        "└ 📈 **UPTIME:** 100%\n\n"
+        "⚡ **WELCOME, {name}**\n"
+        "🛡️ **PREMIUM UTILITY SOLUTION**\n\n"
+        "👇 **TO GET STARTED, USE THE MENU BELOW**"
+    ),
     "faq": (
         "❓ **UTILITY PANEL | FAQ**\n"
         "➖➖➖➖➖➖➖➖➖➖\n\n"
@@ -24,11 +34,50 @@ DYNAMIC_TEXT = {
         "├ A premium utility solution for managing automated tasks.\n"
         "├ Navigate using the control panel below.\n\n"
         "➖➖➖➖➖➖➖➖➖➖"
+    ),
+    "features": (
+        "⚡ **FEATURES**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "🧠 **SYSTEM STATUS**\n"
+        "├ 🟢 **STATUS:** Operational\n"
+        "└ 📈 **UPTIME:** 100%\n\n"
+        "💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"
+    ),
+    "payment": (
+        "💳 **PAYMENT METHODS**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "🔗 **DEPOSIT VIA GATEWAY**\n"
+        "├ Accepted: Crypto / Cards\n"
+        "└ Status: **LIVE**\n\n"
+        "💰 **ACCOUNT BALANCE:** £0.00\n\n"
+        "👇 **SELECT ACTION**"
+    ),
+    "subscription": (
+        "🖋️ **SUBSCRIPTION PLANS**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "💎 **CHOOSE YOUR TIER**\n\n"
+        "🟢 **BASIC PLAN**\n"
+        "├ Price: £20 / Month\n"
+        "└ Access: Standard Features\n\n"
+        "🔵 **PRO PLAN**\n"
+        "├ Price: £50 / Month\n"
+        "└ Access: Advanced + Priority\n\n"
+        "👑 **ULTRA PLAN**\n"
+        "├ Price: £90 / Month\n"
+        "└ Access: Full VIP Access\n\n"
+        "➖➖➖➖➖➖➖➖➖➖"
+    ),
+    "dashboard": (
+        "📊 **UTILITY DASHBOARD**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "⛔ **ACCESS DENIED**\n"
+        "├ 💳 **NO ACTIVE SUBSCRIPTION**\n"
+        "└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
+        "➖➖➖➖➖➖➖➖➖➖"
     )
 }
 
 def get_main_menu():
-    """Generates the persistent bottom keyboard layout."""
     keyboard = [
         [KeyboardButton("📊 DASHBOARD")],
         [KeyboardButton("💳 PAYMENT"), KeyboardButton("⚡ FEATURES"), KeyboardButton("⚙️ SYSTEM")],
@@ -38,28 +87,30 @@ def get_main_menu():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
 
-def get_faq_keyboard():
+def get_admin_main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")],
-        [InlineKeyboardButton("← MENU", callback_data="faq_menu")]
+        [InlineKeyboardButton("📝 Edit Templates", callback_data="admin_templates")],
+        [InlineKeyboardButton("👥 User Management", callback_data="admin_users"), InlineKeyboardButton("➕ Add Admin", callback_data="admin_add")],
+        [InlineKeyboardButton("⚙️ Bot Settings", callback_data="admin_settings")],
+        [InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("❌ Close", callback_data="admin_logout")]
+    ])
+
+def get_admin_templates_menu():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Welcome Text", callback_data="edit_welcome"), InlineKeyboardButton("FAQ Text", callback_data="edit_faq")],
+        [InlineKeyboardButton("Features Text", callback_data="edit_features"), InlineKeyboardButton("Payment Text", callback_data="edit_payment")],
+        [InlineKeyboardButton("Subscription Text", callback_data="edit_subscription"), InlineKeyboardButton("Dashboard Text", callback_data="edit_dashboard")],
+        [InlineKeyboardButton("🔙 Back to Admin Menu", callback_data="admin_home")]
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    welcome_text = (
-        f"👋 **WELCOME TO UTILITY PANEL**\n"
-        f"➖➖➖➖➖➖➖➖➖➖\n\n"
-        f"🧠 **SYSTEM STATUS**\n"
-        f"├ 🟢 **STATUS:** Operational\n"
-        f"└ 📈 **UPTIME:** 100%\n\n"
-        f"⚡ **WELCOME, {update.effective_user.first_name}**\n"
-        f"🛡️ **PREMIUM UTILITY SOLUTION**\n\n"
-        f"👇 **TO GET STARTED, USE THE MENU BELOW**"
-    )
-    USER_STATES[update.effective_user.id] = None # Reset state
+    # Replaces {name} with the user's actual first name dynamically
+    welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", update.effective_user.first_name)
+    USER_STATES[update.effective_user.id] = None
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles the /admin command."""
     user_id = update.effective_user.id
     if user_id in ADMINS:
         await show_admin_panel(update, context)
@@ -68,17 +119,8 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Displays the admin configuration panel."""
-    msg = (
-        "⚙️ **ADMIN CONTROL PANEL**\n"
-        "➖➖➖➖➖➖➖➖➖➖\n\n"
-        "Select a module to configure or edit below:"
-    )
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Edit FAQ Text", callback_data="admin_edit_faq")],
-        [InlineKeyboardButton("📊 View Statistics", callback_data="admin_stats")],
-        [InlineKeyboardButton("🚪 Logout", callback_data="admin_logout")]
-    ])
+    msg = "⚙️ **ADMIN CONTROL PANEL**\n➖➖➖➖➖➖➖➖➖➖\n\nSelect a module to configure below:"
+    markup = get_admin_main_menu()
     
     if update.message:
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
@@ -86,18 +128,15 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await update.callback_query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handles text input from bottom keyboards and state interactions."""
     user_id = update.effective_user.id
     text = update.message.text
-
-    # --- STATE INTERCEPTION (For Admin Login & Editing) ---
     current_state = USER_STATES.get(user_id)
     
+    # --- ADMIN STATE INTERCEPTION ---
     if current_state == "awaiting_admin_password":
         if text == ADMIN_PASSWORD:
             ADMINS.add(user_id)
             USER_STATES[user_id] = None
-            # Delete the password from chat for security
             try:
                 await update.message.delete()
             except:
@@ -109,24 +148,24 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text("❌ **Incorrect Password.** Access Denied.", parse_mode="Markdown")
         return
 
-    elif current_state == "awaiting_faq_edit":
-        DYNAMIC_TEXT["faq"] = text
+    elif current_state and current_state.startswith("awaiting_edit_"):
+        template_key = current_state.replace("awaiting_edit_", "")
+        DYNAMIC_TEXT[template_key] = text
         USER_STATES[user_id] = None
-        await update.message.reply_text("✅ **FAQ Updated Successfully!**\nThe new text is now live for all users.", parse_mode="Markdown")
-        await show_admin_panel(update, context)
+        await update.message.reply_text(f"✅ **Template Updated Successfully!**\nThe new text for '{template_key.upper()}' is now live.", parse_mode="Markdown")
+        # Return to templates menu
+        await update.message.reply_text("⚙️ **TEMPLATE EDITOR**\nSelect a template to modify:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
         return
 
-    # --- REGULAR MENU HANDLING ---
-    USER_STATES[user_id] = None # Reset state if they click a normal menu button
+    # --- REGULAR USER MENU HANDLING ---
+    USER_STATES[user_id] = None
 
     if text == "📊 DASHBOARD":
-        msg = "📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💳 PAYMENT", callback_data="trigger_payment")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        await update.message.reply_text(DYNAMIC_TEXT["dashboard"], reply_markup=markup, parse_mode="Markdown")
 
     elif text == "⚡ FEATURES":
-        msg = "⚡ **FEATURES**\n➖➖➖➖➖➖➖➖➖➖\n\n🧠 **SYSTEM STATUS**\n├ 🟢 **STATUS:** Operational\n└ 📈 **UPTIME:** 100%\n\n💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(DYNAMIC_TEXT["features"], parse_mode="Markdown")
 
     elif text == "⚙️ SYSTEM":
         msg = "⚙️ **SYSTEM STATUS**\n➖➖➖➖➖➖➖➖➖➖\n\n🖥️ **SERVER STATUS**\n├ ✅ **API:** Online\n├ ✅ **DATABASE:** Connected\n├ ✅ **SERVICES:** Operational\n└ ✅ **PAYMENTS:** Active\n\n📊 **PERFORMANCE**\n├ 📶 **UPTIME:** 99.9%\n├ ⚡ **RESPONSE:** < 100ms\n└ 🔄 **LAST CHECK:** Just now\n\n➖➖➖➖➖➖➖➖➖➖"
@@ -153,14 +192,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
 
     elif text == "🖋️ SUBSCRIPTION":
-        msg = "🖋️ **SUBSCRIPTION PLANS**\n➖➖➖➖➖➖➖➖➖➖\n\n💎 **CHOOSE YOUR TIER**\n\n🟢 **BASIC PLAN**\n├ Price: £20 / Month\n└ Access: Standard Features\n\n🔵 **PRO PLAN**\n├ Price: £50 / Month\n└ Access: Advanced + Priority\n\n👑 **ULTRA PLAN**\n├ Price: £90 / Month\n└ Access: Full VIP Access\n\n➖➖➖➖➖➖➖➖➖➖"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💳 BUY BASIC (£20)", callback_data="sub_basic")], [InlineKeyboardButton("💳 BUY PRO (£50)", callback_data="sub_pro")], [InlineKeyboardButton("💳 BUY ULTRA (£90)", callback_data="sub_ultra")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        await update.message.reply_text(DYNAMIC_TEXT["subscription"], reply_markup=markup, parse_mode="Markdown")
 
     elif text == "💳 PAYMENT":
-        msg = "💳 **PAYMENT METHODS**\n➖➖➖➖➖➖➖➖➖➖\n\n🔗 **DEPOSIT VIA GATEWAY**\n├ Accepted: Crypto / Cards\n└ Status: **LIVE**\n\n💰 **ACCOUNT BALANCE:** £0.00\n\n👇 **SELECT ACTION**"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        await update.message.reply_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
         
     elif text == "👤 PROFILE":
         msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT DETAILS**\n├ 👤 **ID:** `{update.effective_user.id}`\n├ 👑 **STATUS:** Free Tier\n├ 💰 **BALANCE:** £0.00\n├ ⚡ **ACTIONS USED:** 0\n└ ⏱️ **UPTIME USED:** 0 mins\n\n➖➖➖➖➖➖➖➖➖➖"
@@ -168,8 +205,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
         
     elif text == "❓ FAQ":
-        # Pulls from dynamic memory variable so admin edits are visible
-        await update.message.reply_text(DYNAMIC_TEXT["faq"], reply_markup=get_faq_keyboard(), parse_mode="Markdown")
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
+        await update.message.reply_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
 
     else:
         await update.message.reply_text(f"You selected {text}. This module is currently under construction.", parse_mode="Markdown")
@@ -180,16 +217,28 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
 
     # --- ADMIN CALLBACKS ---
-    if query.data == "admin_edit_faq":
+    if query.data == "admin_home":
         if user_id in ADMINS:
-            USER_STATES[user_id] = "awaiting_faq_edit"
-            await query.message.edit_text("📝 **EDIT FAQ TEXT**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease type and send the new text for the FAQ module now.\n\n*(Tip: You can use Telegram formatting tools or Markdown)*", parse_mode="Markdown")
-        else:
-            await query.answer("❌ You are not authorized.", show_alert=True)
+            await show_admin_panel(update, context)
+
+    elif query.data == "admin_templates":
+        if user_id in ADMINS:
+            await query.message.edit_text("⚙️ **TEMPLATE EDITOR**\n➖➖➖➖➖➖➖➖➖➖\n\nSelect a template below to modify its text:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
+
+    elif query.data.startswith("edit_"):
+        if user_id in ADMINS:
+            template_key = query.data.replace("edit_", "")
+            USER_STATES[user_id] = f"awaiting_edit_{template_key}"
             
-    elif query.data == "admin_stats":
+            instruction = f"📝 **EDITING: {template_key.upper()}**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease type and send the new text for this module now.\n\n*(Tip: You can use Markdown for bolding/lists)*"
+            if template_key == "welcome":
+                instruction += "\n\n*(Note: Include `{name}` in your text where you want the user's first name to appear!)*"
+                
+            await query.message.edit_text(instruction, parse_mode="Markdown")
+
+    elif query.data in ["admin_users", "admin_add", "admin_settings", "admin_broadcast"]:
         if user_id in ADMINS:
-            await query.answer("📊 Bot Statistics: 1 User, 100% Uptime.", show_alert=True)
+            await query.answer("🚧 This admin module is under construction.", show_alert=True)
             
     elif query.data == "admin_logout":
         if user_id in ADMINS:
@@ -206,9 +255,8 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
     elif query.data == "pay_back":
-        msg = "💳 **PAYMENT METHODS**\n➖➖➖➖➖➖➖➖➖➖\n\n🔗 **DEPOSIT VIA GATEWAY**\n├ Accepted: Crypto / Cards\n└ Status: **LIVE**\n\n💰 **ACCOUNT BALANCE:** £0.00\n\n👇 **SELECT ACTION**"
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
-        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+        await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
         
     elif query.data.startswith("dep_"):
         await query.answer("🔄 Generating deposit invoice...", show_alert=True)
@@ -226,7 +274,8 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     elif query.data == "faq_ask":
         await query.message.edit_text("📝 Please type your question.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]]))
     elif query.data == "faq_cancel":
-        await query.message.edit_text(DYNAMIC_TEXT["faq"], reply_markup=get_faq_keyboard(), parse_mode="Markdown")
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
+        await query.message.edit_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
     elif query.data == "faq_menu":
         await query.message.delete()
         
@@ -236,10 +285,9 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
     
-    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
-    application.add_handler(CommandHandler("admin", admin_command)) # Added admin command
+    application.add_handler(CommandHandler("admin", admin_command))
     
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_clicks))
     application.add_handler(CallbackQueryHandler(handle_inline_callbacks))

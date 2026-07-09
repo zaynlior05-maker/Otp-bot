@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 # Enable logging
 logging.basicConfig(
@@ -22,6 +22,24 @@ def get_main_menu():
         [KeyboardButton("👤 PROFILE"), KeyboardButton("💬 SUPPORT"), KeyboardButton("🤝 PARTNER")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, persistent=True)
+
+def get_faq_text():
+    """Returns the main FAQ text."""
+    return (
+        "❓ **UTILITY PANEL | FAQ**\n"
+        "➖➖➖➖➖➖➖➖➖➖\n\n"
+        "❓ **WHAT IS THIS BOT?**\n"
+        "├ A premium utility solution for managing automated tasks.\n"
+        "├ Navigate using the control panel below.\n\n"
+        "➖➖➖➖➖➖➖➖➖➖"
+    )
+
+def get_faq_keyboard():
+    """Returns the main FAQ inline keyboard."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")],
+        [InlineKeyboardButton("← MENU", callback_data="faq_menu")]
+    ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends the welcome message and activates the bottom keyboard."""
@@ -57,7 +75,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
             "➖➖➖➖➖➖➖➖➖➖"
         )
-        # Adds the single inline button attached to the message
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💳 PAYMENT", callback_data="trigger_payment")]])
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
 
@@ -103,7 +120,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "👇 **CLICK BELOW**\n\n"
             "➖➖➖➖➖➖➖➖➖➖"
         )
-        # Adds the URL redirect button (shows the top-right arrow in Telegram)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("VIEW RESULTS ↗", url="https://github.com")]])
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
 
@@ -137,7 +153,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             "└ • REVIEW FAQ SECTION\n\n"
             "➖➖➖➖➖➖➖➖➖➖"
         )
-        # Adds the split URL redirect buttons
         markup = InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("💬 SUPPORT ↗", url="https://t.me/telegram"), 
@@ -145,10 +160,110 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             ]
         ])
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+
+    elif text == "🤝 PARTNER":
+        bot_username = context.bot.username if context.bot.username else "UtilityBot"
+        msg = (
+            "🤝 **PARTNER PANEL**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "🔗 **YOUR REFERRAL LINK:**\n"
+            f"`https://t.me/{bot_username}?start=ref_{update.effective_user.id}`\n\n"
+            "➖➖➖➖➖➖➖➖➖➖\n"
+            "📊 **CLICK STATISTICS:**\n"
+            "├ 📅 **TODAY:** 0 clicks\n"
+            "├ 📅 **THIS WEEK:** 0 clicks\n"
+            "├ 📅 **THIS MONTH:** 0 clicks\n"
+            "└ 📈 **ALL TIME:** 0 clicks\n\n"
+            "👥 **REFERRAL STATS:**\n"
+            "├ 👤 **TOTAL USERS:** 0 users\n"
+            "├ 📊 **CONVERSION:** 0.0%\n"
+            "└ 💎 **COMMISSION RATE:** 50%\n\n"
+            "➖➖➖➖➖➖➖➖➖➖\n"
+            "💰 **EARNINGS:**\n"
+            "├ 📅 **TODAY:** $0.00\n"
+            "├ 📅 **THIS WEEK:** $0.00\n"
+            "├ 📅 **THIS MONTH:** $0.00\n"
+            "└ 💵 **ALL TIME:** $0.00\n\n"
+            "➖➖➖➖➖➖➖➖➖➖"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📊 Generate Stats Image", callback_data="partner_image"),
+                InlineKeyboardButton("📩 Download CSV Report", callback_data="partner_csv")
+            ],
+            [InlineKeyboardButton("🔄 Refresh Stats", callback_data="partner_refresh")]
+        ])
+        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
         
+    elif text == "❓ FAQ":
+        await update.message.reply_text(get_faq_text(), reply_markup=get_faq_keyboard(), parse_mode="Markdown")
+
+    elif text == "👤 PROFILE":
+        msg = (
+            "👤 **USER PROFILE**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "🆔 **ACCOUNT DETAILS**\n"
+            f"├ 👤 **ID:** `{update.effective_user.id}`\n"
+            "├ 👑 **STATUS:** Free Tier\n"
+            "├ 💰 **BALANCE:** $0.00\n"
+            "├ ⚡ **ACTIONS USED:** 0\n"
+            "└ ⏱️ **UPTIME USED:** 0 mins\n\n"
+            "➖➖➖➖➖➖➖➖➖➖"
+        )
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("💰 Deposit", callback_data="profile_deposit"),
+                InlineKeyboardButton("⭐ Upgrade Plan", callback_data="profile_upgrade")
+            ],
+            [InlineKeyboardButton("📝 Transaction History", callback_data="profile_history")]
+        ])
+        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+
     else:
-        # Fallback for buttons not explicitly coded yet
         await update.message.reply_text(f"You selected {text}. This module is currently under construction.", parse_mode="Markdown")
+
+async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Processes clicks on inline buttons attached to messages."""
+    query = update.callback_query
+    
+    # Acknowledge the button press
+    await query.answer()
+
+    # Partner Callbacks
+    if query.data == "partner_image":
+        await query.answer("🖼️ Generating image... (Requires Pillow library setup)", show_alert=True)
+    elif query.data == "partner_csv":
+        await query.answer("📩 CSV generation is pending database connection.", show_alert=True)
+    elif query.data == "partner_refresh":
+        await query.answer("🔄 Stats refreshed successfully.", show_alert=False)
+    elif query.data == "trigger_payment":
+        await query.answer("💳 Payment gateway is currently unlinked.", show_alert=True)
+        
+    # FAQ Callbacks
+    elif query.data == "faq_ask":
+        msg = (
+            "❓ **UTILITY PANEL | ASK A QUESTION**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "❔ **ASK A QUESTION**\n"
+            "📝 PLEASE TYPE YOUR QUESTION BELOW\n\n"
+            "➖➖➖➖➖➖➖➖➖➖"
+        )
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]])
+        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+        
+    elif query.data == "faq_cancel":
+        await query.message.edit_text(get_faq_text(), reply_markup=get_faq_keyboard(), parse_mode="Markdown")
+        
+    elif query.data == "faq_menu":
+        await query.message.delete()
+        
+    # Profile Callbacks
+    elif query.data == "profile_deposit":
+        await query.answer("💰 Deposit functionality is not yet configured.", show_alert=True)
+    elif query.data == "profile_upgrade":
+        await query.answer("⭐ Plan upgrade options loading...", show_alert=True)
+    elif query.data == "profile_history":
+        await query.answer("📝 No transaction history found.", show_alert=True)
 
 def main() -> None:
     """Starts the application."""
@@ -162,8 +277,11 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
     
-    # This handler catches all standard text messages (which is what the bottom keyboard outputs)
+    # Text handler for bottom keyboard
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_clicks))
+    
+    # Callback handler for inline buttons attached to messages
+    application.add_handler(CallbackQueryHandler(handle_inline_callbacks))
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 

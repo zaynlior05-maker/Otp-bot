@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_ID = os.getenv("ADMIN_ID")
+GROUP_LOG_ID = os.getenv("GROUP_LOG_ID") # NEW: Group Chat ID for console logs
 
 # Fetch Links from Railway
 SUPPORT_LINK = os.getenv("SUPPORT_LINK", "https://t.me/telegram")
@@ -30,13 +31,23 @@ SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 # Global Memory Variables
 ADMINS = set()
 USER_STATES = {}
-USER_LANGUAGES = {} # Stores user_id -> language code
+USER_LANGUAGES = {} 
+TEMP_TIER = {} # Temporary memory for when admin is building a new tier
+
+# Dynamic Subscription Tiers (Admin can now add/remove these)
+SUBSCRIPTION_TIERS = [
+    {"label": "Daily £15", "val": "15"},
+    {"label": "Weekly £30", "val": "30"},
+    {"label": "Monthly £50", "val": "50"},
+    {"label": "Yearly £100", "val": "100"},
+    {"label": "Lifetime £200", "val": "200"}
+]
 
 # Fetch all worldwide supported languages
 try:
     SUPPORTED_LANGS = GoogleTranslator().get_supported_languages(as_dict=True)
 except:
-    SUPPORTED_LANGS = {'english': 'en', 'spanish': 'es', 'french': 'fr', 'chinese (simplified)': 'zh-CN', 'russian': 'ru', 'arabic': 'ar', 'hindi': 'hi'}
+    SUPPORTED_LANGS = {'english': 'en', 'spanish': 'es', 'french': 'fr', 'chinese': 'zh-CN', 'russian': 'ru'}
 
 # Dynamic Text Templates
 DYNAMIC_TEXT = {
@@ -45,8 +56,8 @@ DYNAMIC_TEXT = {
     "features": ("⚡ **FEATURES**\n➖➖➖➖➖➖➖➖➖➖\n\n🧠 **SYSTEM STATUS**\n├ 🟢 **STATUS:** Operational\n└ 📈 **UPTIME:** 100%\n\n💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"),
     "activate": ("💰 **SELECT SUBSCRIPTION PLAN**\n➖➖➖➖➖➖➖➖➖➖\n\n👇 **CHOOSE AMOUNT:**"),
     "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"),
-    "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\nℹ️ **BEFORE CONTACTING**\n├ • CHECK TRANSACTION STATUS\n├ • VERIFY SUBSCRIPTION\n├ • TRY /start COMMAND\n└ • REVIEW FAQ SECTION\n\n➖➖➖➖➖➖➖➖➖➖"),
-    "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n├ • PERFORMANCE STATISTICS\n├ • COMMUNITY DISCUSSIONS\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖"),
+    "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\n➖➖➖➖➖➖➖➖➖➖"),
+    "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖"),
     "commands": ("📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ ⚙️ /admin")
 }
 
@@ -54,10 +65,7 @@ BUTTON_LABELS = {
     "btn_dashboard": "📊 DASHBOARD", "btn_activate": "🔑 ACTIVATE", "btn_features": "⚡ FEATURES",
     "btn_system": "⚙️ SYSTEM", "btn_faq": "❓ FAQ", "btn_results": "📈 RESULTS",
     "btn_commands": "📋 COMMANDS", "btn_profile": "👤 PROFILE", "btn_support": "💬 SUPPORT",
-    "btn_language": "🌐 LANGUAGE",
-    "label_amt1": "Daily £15", "label_amt2": "Weekly £30", "label_amt3": "Monthly £50",
-    "label_amt4": "Yearly £100", "label_amt5": "Lifetime £200",
-    "val_amt1": "15", "val_amt2": "30", "val_amt3": "50", "val_amt4": "100", "val_amt5": "200"
+    "btn_language": "🌐 LANGUAGE"
 }
 
 # --- Translation Engine ---
@@ -78,35 +86,37 @@ async def translate_markup(markup, lang):
                 else: new_row.append(InlineKeyboardButton(trans_text, callback_data=btn.callback_data))
             new_keyboard.append(new_row)
         return InlineKeyboardMarkup(new_keyboard)
-    return markup # Keeps main ReplyKeyboard English
+    return markup 
 
 async def safe_send(context, chat_id, text, markup=None, lang='en', edit_message=None):
     trans_text = await translate_text(text, lang)
     trans_markup = await translate_markup(markup, lang)
-    
-    # Repair Markdown spacing often broken by Google Translate
     trans_text = trans_text.replace("** ", "**").replace(" **", "**")
     
     try:
         if edit_message: await edit_message.edit_text(trans_text, reply_markup=trans_markup, parse_mode="Markdown")
         else: await context.bot.send_message(chat_id=chat_id, text=trans_text, reply_markup=trans_markup, parse_mode="Markdown")
     except Exception as e:
-        # Fallback to plain text if markdown parser fails
         if edit_message: await edit_message.edit_text(trans_text, reply_markup=trans_markup)
         else: await context.bot.send_message(chat_id=chat_id, text=trans_text, reply_markup=trans_markup)
 
-# --- Helper Functions ---
-def get_back_markup():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
-
+# --- Notification System ---
 async def notify_admin(context: ContextTypes.DEFAULT_TYPE, message: str = None, photo: str = None, caption: str = None):
-    if ADMIN_ID:
+    """Sends logs to both the private Admin ID and the Group Chat Console"""
+    targets = []
+    if ADMIN_ID: targets.append(ADMIN_ID)
+    if GROUP_LOG_ID: targets.append(GROUP_LOG_ID)
+    
+    for target in targets:
         try:
-            if photo: await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo, caption=caption, parse_mode="Markdown")
-            elif message: await context.bot.send_message(chat_id=ADMIN_ID, text=message, parse_mode="Markdown")
+            if photo: await context.bot.send_photo(chat_id=target, photo=photo, caption=caption, parse_mode="Markdown")
+            elif message: await context.bot.send_message(chat_id=target, text=message, parse_mode="Markdown")
         except: pass
 
 # --- Menu Builders ---
+def get_back_markup():
+    return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
+
 def get_main_menu():
     keyboard = [
         [KeyboardButton(BUTTON_LABELS["btn_dashboard"])],
@@ -117,7 +127,23 @@ def get_main_menu():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, is_persistent=True)
 
 def get_admin_main_menu():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("📝 Edit Messages", callback_data="admin_templates"), InlineKeyboardButton("🎛️ Edit Keyboards", callback_data="admin_keyboards")], [InlineKeyboardButton("❌ Close Menu", callback_data="admin_logout")]])
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Edit Messages", callback_data="admin_templates"), InlineKeyboardButton("🎛️ Edit Main Menus", callback_data="admin_keyboards")], 
+        [InlineKeyboardButton("💰 Manage Subscription Tiers", callback_data="admin_tiers")],
+        [InlineKeyboardButton("❌ Close Menu", callback_data="admin_logout")]
+    ])
+
+def get_admin_tiers_menu():
+    keyboard = []
+    for i, tier in enumerate(SUBSCRIPTION_TIERS):
+        keyboard.append([
+            InlineKeyboardButton(f"✏️ {tier['label']}", callback_data=f"edit_tier_label_{i}"),
+            InlineKeyboardButton(f"💵 £{tier['val']}", callback_data=f"edit_tier_val_{i}"),
+            InlineKeyboardButton("❌ Del", callback_data=f"del_tier_{i}")
+        ])
+    keyboard.append([InlineKeyboardButton("➕ Add New Tier", callback_data="add_new_tier")])
+    keyboard.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="admin_home")])
+    return InlineKeyboardMarkup(keyboard)
 
 def get_admin_templates_menu():
     return InlineKeyboardMarkup([
@@ -131,21 +157,22 @@ def get_admin_templates_menu():
 def get_admin_keyboards_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Menu: Dashboard", callback_data="kbtn_btn_dashboard"), InlineKeyboardButton("Menu: Activate", callback_data="kbtn_btn_activate")],
-        [InlineKeyboardButton("Tier 1 Display", callback_data="kbtn_label_amt1"), InlineKeyboardButton("Tier 1 Value", callback_data="kbtn_val_amt1")],
-        [InlineKeyboardButton("Tier 2 Display", callback_data="kbtn_label_amt2"), InlineKeyboardButton("Tier 2 Value", callback_data="kbtn_val_amt2")],
-        [InlineKeyboardButton("Tier 3 Display", callback_data="kbtn_label_amt3"), InlineKeyboardButton("Tier 3 Value", callback_data="kbtn_val_amt3")],
-        [InlineKeyboardButton("Tier 4 Display", callback_data="kbtn_label_amt4"), InlineKeyboardButton("Tier 4 Value", callback_data="kbtn_val_amt4")],
-        [InlineKeyboardButton("Tier 5 Display", callback_data="kbtn_label_amt5"), InlineKeyboardButton("Tier 5 Value", callback_data="kbtn_val_amt5")],
+        [InlineKeyboardButton("Menu: Features", callback_data="kbtn_btn_features"), InlineKeyboardButton("Menu: System", callback_data="kbtn_btn_system")],
         [InlineKeyboardButton("🔙 Back", callback_data="admin_home")]
     ])
 
 def get_tiers_markup():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton(BUTTON_LABELS["label_amt1"], callback_data="amt_val1"), InlineKeyboardButton(BUTTON_LABELS["label_amt2"], callback_data="amt_val2")],
-        [InlineKeyboardButton(BUTTON_LABELS["label_amt3"], callback_data="amt_val3"), InlineKeyboardButton(BUTTON_LABELS["label_amt4"], callback_data="amt_val4")],
-        [InlineKeyboardButton(BUTTON_LABELS["label_amt5"], callback_data="amt_val5")],
-        [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]
-    ])
+    keyboard = []
+    row = []
+    for i, tier in enumerate(SUBSCRIPTION_TIERS):
+        row.append(InlineKeyboardButton(tier["label"], callback_data=f"amt_val_{i}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")])
+    return InlineKeyboardMarkup(keyboard)
 
 # --- Core Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,7 +181,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", user.first_name)
     USER_STATES[user.id] = None
     await safe_send(context, user.id, welcome_text, get_main_menu(), lang)
-    await notify_admin(context, message=f"🔔 **NEW USER ALERT**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user.first_name}\n🆔 **ID:** `{user.id}`\n└ Started the bot.")
+    
+    # Send Log to Console
+    await notify_admin(context, message=f"🟢 **BOT STARTED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user.first_name}\n🆔 **ID:** `{user.id}`\n└ User launched the bot.")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -176,7 +205,11 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current_state = USER_STATES.get(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
-    # Handle active system states
+    # General Console Log for Menu Navigations
+    if text in BUTTON_LABELS.values():
+        await notify_admin(context, message=f"🖱️ **MENU NAVIGATION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_name} (`{user_id}`)\n➡️ **Clicked:** `{text}`")
+    
+    # Handle Active Admin/System States
     if current_state == "awaiting_admin_password":
         if text == ADMIN_PASSWORD:
             ADMINS.add(user_id)
@@ -188,6 +221,40 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             USER_STATES[user_id] = None
             await update.message.reply_text("❌ **Incorrect Password.**", parse_mode="Markdown")
+        return
+        
+    elif current_state == "awaiting_new_tier_label":
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            TEMP_TIER[user_id] = {"label": text}
+            USER_STATES[user_id] = "awaiting_new_tier_val"
+            await update.message.reply_text("✅ Label saved.\n\nNow, send the numeric **PRICE VALUE** for this tier (e.g. `30`):", parse_mode="Markdown")
+        return
+        
+    elif current_state == "awaiting_new_tier_val":
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            TEMP_TIER[user_id]["val"] = text.strip()
+            SUBSCRIPTION_TIERS.append(TEMP_TIER[user_id])
+            USER_STATES[user_id] = None
+            await update.message.reply_text("✅ **New Tier Added!**", parse_mode="Markdown")
+            await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
+        return
+        
+    elif current_state and current_state.startswith("edit_tier_label_"):
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            idx = int(current_state.replace("edit_tier_label_", ""))
+            SUBSCRIPTION_TIERS[idx]["label"] = text
+            USER_STATES[user_id] = None
+            await update.message.reply_text("✅ **Tier Label Updated!**", parse_mode="Markdown")
+            await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
+        return
+
+    elif current_state and current_state.startswith("edit_tier_val_"):
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            idx = int(current_state.replace("edit_tier_val_", ""))
+            SUBSCRIPTION_TIERS[idx]["val"] = text.strip()
+            USER_STATES[user_id] = None
+            await update.message.reply_text("✅ **Tier Price Updated!**", parse_mode="Markdown")
+            await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
         return
 
     elif current_state == "awaiting_language_input":
@@ -201,7 +268,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             USER_STATES[user_id] = None
             await safe_send(context, user_id, f"✅ Language successfully updated!", lang=USER_LANGUAGES[user_id])
         else:
-            await safe_send(context, user_id, "❌ Language not recognized.\nPlease type a valid language name (e.g. Spanish, German, Chinese) or click BACK.", get_back_markup(), lang)
+            await safe_send(context, user_id, "❌ Language not recognized.\nPlease type a valid language name.", get_back_markup(), lang)
         return
 
     elif current_state and current_state.startswith("awaiting_edit_"):
@@ -230,7 +297,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     USER_STATES[user_id] = None
 
-    # Routing based on main menu text
+    # Normal User Routing
     if text == BUTTON_LABELS["btn_dashboard"]:
         markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
         await safe_send(context, user_id, DYNAMIC_TEXT["dashboard"], markup, lang)
@@ -258,7 +325,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     elif text == BUTTON_LABELS["btn_profile"]:
         msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT DETAILS**\n├ 👤 **ID:** `{user_id}`\n├ 👑 **RANK:** Free Tier\n├ 📅 **DAYS ACTIVE:** 0\n├ 💰 **BALANCE:** £0.00\n└ ⚡ **ACTIONS:** 0\n\n➖➖➖➖➖➖➖➖➖➖"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("💰 Deposit", callback_data="trigger_payment")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
+        # Adjusted exact layout from Image Request
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("💰 Deposit", callback_data="trigger_payment")], 
+            [InlineKeyboardButton("📜 History", callback_data="view_history")],
+            [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]
+        ])
         await safe_send(context, user_id, msg, markup, lang)
     
     elif text == BUTTON_LABELS["btn_faq"]:
@@ -271,7 +343,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, msg, get_back_markup(), lang)
         
     else:
-        # If user types something random and they are in a translated lang, tell them to use the menu
         await safe_send(context, user_id, "Command not recognized. Please use the layout setup panel lower menu.", lang=lang)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -288,6 +359,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user_id = query.from_user.id
+    user_name = query.from_user.first_name
     lang = USER_LANGUAGES.get(user_id, 'en')
     
     if not query.data.startswith("coin_") and query.data != "check_payment":
@@ -299,13 +371,30 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         except: pass
         return
 
-    # Admin Routing (Never Translated)
+    # Admin Routing 
     if query.data == "admin_home" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         await show_admin_panel(update, context)
     elif query.data == "admin_templates" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         await query.message.edit_text("⚙️ **TEMPLATE EDITOR**", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
     elif query.data == "admin_keyboards" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         await query.message.edit_text("🎛️ **KEYBOARD BUTTON EDITOR**", reply_markup=get_admin_keyboards_menu(), parse_mode="Markdown")
+    elif query.data == "admin_tiers" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        await query.message.edit_text("💰 **TIER CONFIGURATION**\nManage your subscription bases here:", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
+    elif query.data == "add_new_tier" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        USER_STATES[user_id] = "awaiting_new_tier_label"
+        await query.message.edit_text("➕ **ADD NEW TIER**\n\nSend the **Display Name** for the new tier (e.g. `Weekend Pass £10`):", parse_mode="Markdown")
+    elif query.data.startswith("del_tier_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        idx = int(query.data.replace("del_tier_", ""))
+        SUBSCRIPTION_TIERS.pop(idx)
+        await query.message.edit_text("✅ **Tier Deleted.**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
+    elif query.data.startswith("edit_tier_label_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        idx = query.data.replace("edit_tier_label_", "")
+        USER_STATES[user_id] = f"edit_tier_label_{idx}"
+        await query.message.edit_text("✏️ Send the new **Display Name** for this tier:", parse_mode="Markdown")
+    elif query.data.startswith("edit_tier_val_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        idx = query.data.replace("edit_tier_val_", "")
+        USER_STATES[user_id] = f"edit_tier_val_{idx}"
+        await query.message.edit_text("💵 Send the new **Numeric Price Value** for this tier (e.g. `30`):", parse_mode="Markdown")
     elif query.data.startswith("edit_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         template_key = query.data.replace("edit_", "")
         USER_STATES[user_id] = f"awaiting_edit_{template_key}"
@@ -318,13 +407,17 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         ADMINS.discard(user_id)
         await query.message.edit_text("🚪 **Logged out.**", parse_mode="Markdown")
             
-    # User Routing (Translated)
+    # User Routing 
     elif query.data == "trigger_payment":
         await safe_send(context, user_id, DYNAMIC_TEXT["activate"], get_tiers_markup(), lang, edit_message=query.message)
         
-    elif query.data.startswith("amt_val"):
-        idx = query.data.replace("amt_val", "")
-        amount = BUTTON_LABELS[f"val_amt{idx}"]
+    elif query.data == "view_history":
+        msg = "📜 **TRANSACTION HISTORY**\n➖➖➖➖➖➖➖➖➖➖\n\nNo recent transactions found on this account."
+        await safe_send(context, user_id, msg, get_back_markup(), lang, edit_message=query.message)
+        
+    elif query.data.startswith("amt_val_"):
+        idx = int(query.data.replace("amt_val_", ""))
+        amount = SUBSCRIPTION_TIERS[idx]["val"]
         msg = "🪙 **SELECT CRYPTO:**"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("LTC", callback_data=f"coin_LTC_{amount}"), InlineKeyboardButton("BTC", callback_data=f"coin_BTC_{amount}")],
@@ -339,7 +432,8 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         parts = query.data.split("_")
         coin, amount = parts[1], parts[2]
         
-        # Give translation illusion of loading
+        await notify_admin(context, message=f"🧾 **INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_name} (`{user_id}`)\n💰 **Amount:** £{amount}\n🪙 **Coin:** {coin}")
+        
         await safe_send(context, user_id, "⏳ *Generating invoice...*", lang=lang, edit_message=query.message)
         await asyncio.sleep(1)
         

@@ -182,7 +182,10 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user_id = query.from_user.id
-    if not query.data.startswith("coin_"): await query.answer()
+    
+    # We only auto-answer queries that aren't the special check_payment or coin generation ones
+    if not query.data.startswith("coin_") and query.data != "check_payment": 
+        await query.answer()
 
     if query.data == "admin_home":
         if user_id in ADMINS: await show_admin_panel(update, context)
@@ -223,9 +226,10 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
         
     elif query.data.startswith("coin_"):
-        await query.answer()
+        await query.answer() # Answer it manually here to stop the loading wheel
         parts = query.data.split("_")
         coin, amount = parts[1], parts[2]
+        
         await query.message.edit_text("⏳ *Generating invoice...*", parse_mode="Markdown")
         await asyncio.sleep(1)
         
@@ -238,33 +242,43 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             "SOL": SOL_ADDRESS
         }.get(coin, "N/A")
         
-        # New Detailed Invoice Layout
+        # Real-world approximate conversion rates from GBP (£) to Crypto
+        rates_to_gbp = {
+            "LTC": 0.018,
+            "BTC": 0.000021,
+            "USDT-TRC20": 1.28,
+            "USDT-ERC20": 1.28,
+            "ETH": 0.00038,
+            "SOL": 0.0085
+        }
+        
+        # Calculate the equivalent crypto amount dynamically
+        crypto_amount = float(amount) * rates_to_gbp.get(coin, 1.0)
+        
         msg = (
             f"💳 **PAYMENT INVOICE GENERATED**\n"
             f"➖➖➖➖➖➖➖➖➖➖\n\n"
             f"🌐 **NETWORK:** {coin}\n"
             f"⚠️ **WARNING:** Send ONLY **{coin}** to the address below using its native network.\n\n"
-            f"💰 **AMOUNT DUE:** `~{amount}` {coin} (£{amount})\n"
+            f"💰 **AMOUNT DUE:** `~{crypto_amount:.4f}` {coin} (£{amount})\n"
             f"📬 **DEPOSIT ADDRESS:**\n`{addr}`\n\n"
             f"*(Tap the address above to copy it)*\n\n"
             f"➖➖➖➖➖➖➖➖➖➖\n"
             f"⏳ **Status:** Waiting for payment..."
         )
         
-        # New Buttons including Check Payment and Send Screenshot
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")],
             [InlineKeyboardButton("📸 Send Screenshot", callback_data="send_screenshot")],
             [InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]
         ])
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
-        
+
     elif query.data == "check_payment":
-        # Professional Error Alert for Check Payment
+        # Using show_alert=True triggers the actual popup box on the user's screen
         await query.answer("❌ Error: Payment not found on the blockchain. Please allow 5-15 minutes for confirmations, or use 'Send Screenshot' if you have already paid.", show_alert=True)
 
     elif query.data == "send_screenshot":
-        # Activates the screenshot waiting state
         USER_STATES[user_id] = "awaiting_screenshot"
         msg = (
             "📸 **UPLOAD SCREENSHOT**\n"
@@ -275,7 +289,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
     elif query.data == "pay_cancel":
-        USER_STATES[user_id] = None # Clear state just in case
+        USER_STATES[user_id] = None
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
         
@@ -328,7 +342,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_clicks))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo)) # New handler for screenshots
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     
     # Callback Handlers
     application.add_handler(CallbackQueryHandler(handle_inline_callbacks))

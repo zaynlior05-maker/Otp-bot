@@ -1,6 +1,8 @@
 import os
 import logging
 import asyncio
+import json
+import random
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from deep_translator import GoogleTranslator
@@ -34,7 +36,14 @@ USER_STATES = {}
 USER_LANGUAGES = {} 
 TEMP_TIER = {} 
 
-# Dynamic Subscription Tiers
+# --- PERSISTENT STORAGE PATH ---
+# We use the Railway Volume mount path so it never gets deleted on redeploy.
+DATA_DIR = "/app/data"
+if not os.path.exists(DATA_DIR):
+    DATA_DIR = "." # Fallback for local testing
+DATA_FILE = os.path.join(DATA_DIR, "bot_data.json")
+
+# Default Subscription Tiers
 SUBSCRIPTION_TIERS = [
     {"label": "Daily £15", "val": "15"},
     {"label": "Weekly £30", "val": "30"},
@@ -67,6 +76,27 @@ BUTTON_LABELS = {
     "btn_commands": "📋 COMMANDS", "btn_profile": "👤 PROFILE", "btn_support": "💬 SUPPORT",
     "btn_language": "🌐 LANGUAGE"
 }
+
+# --- Database Loader & Saver ---
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f: return json.load(f)
+    return {"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS}
+
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump({"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS}, f)
+
+# Inject loaded data at startup
+data = load_data()
+DYNAMIC_TEXT.update(data.get("templates", {}))
+BUTTON_LABELS.update(data.get("labels", {}))
+SUBSCRIPTION_TIERS = data.get("tiers", SUBSCRIPTION_TIERS)
+
+# --- Format Username Helper ---
+def get_user_display(user):
+    username = f" (@{user.username})" if user.username else ""
+    return f"{user.first_name}{username}"
 
 # --- Translation Engine ---
 async def translate_text(text, lang):
@@ -180,14 +210,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", user.first_name)
     USER_STATES[user.id] = None
     
-    # Send the Welcome Text and attach the Main Menu Reply Keyboard
     await safe_send(context, user.id, welcome_text, get_main_menu(), lang)
-    
-    # Immediately send the inline Activate button (Dashboard style)
     activate_markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")]])
     await safe_send(context, user.id, "👇 **QUICK ACTION**", activate_markup, lang)
     
-    await notify_admin(context, message=f"🟢 **BOT STARTED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user.first_name}\n🆔 **ID:** `{user.id}`\n└ User launched the bot.")
+    # Notify Admin with exact @username display
+    user_display = get_user_display(user)
+    await notify_admin(context, message=f"🟢 **BOT STARTED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_display}\n🆔 **ID:** `{user.id}`\n└ User launched the bot.")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -196,7 +225,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         USER_STATES[user_id] = "awaiting_admin_password"
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
-# --- New Command Routing ---
 async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     lang = USER_LANGUAGES.get(user_id, 'en')
@@ -209,7 +237,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await safe_send(context, user_id, DYNAMIC_TEXT["faq"], markup, lang)
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Catches any unrecognized /commands and blocks them"""
     user_id = update.effective_user.id
     lang = USER_LANGUAGES.get(user_id, 'en')
     msg = "❌ **ACCESS DENIED**\n➖➖➖➖➖➖➖➖➖➖\n\nYou need an active subscription to use this command."
@@ -222,14 +249,15 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     elif update.callback_query: await update.callback_query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
+    user = update.effective_user
+    user_id = user.id
+    user_display = get_user_display(user)
     text = update.message.text
     current_state = USER_STATES.get(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
     if text in BUTTON_LABELS.values():
-        await notify_admin(context, message=f"🖱️ **MENU NAVIGATION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_name} (`{user_id}`)\n➡️ **Clicked:** `{text}`")
+        await notify_admin(context, message=f"🖱️ **MENU NAVIGATION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_display}\n🆔 **ID:** `{user_id}`\n➡️ **Clicked:** `{text}`")
     
     if current_state == "awaiting_admin_password":
         if text == ADMIN_PASSWORD:
@@ -255,6 +283,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             TEMP_TIER[user_id]["val"] = text.strip()
             SUBSCRIPTION_TIERS.append(TEMP_TIER[user_id])
+            save_data() # Save permanently
             USER_STATES[user_id] = None
             await update.message.reply_text("✅ **New Tier Added!**", parse_mode="Markdown")
             await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
@@ -264,6 +293,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             idx = int(current_state.replace("edit_tier_label_", ""))
             SUBSCRIPTION_TIERS[idx]["label"] = text
+            save_data() # Save permanently
             USER_STATES[user_id] = None
             await update.message.reply_text("✅ **Tier Label Updated!**", parse_mode="Markdown")
             await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
@@ -273,6 +303,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             idx = int(current_state.replace("edit_tier_val_", ""))
             SUBSCRIPTION_TIERS[idx]["val"] = text.strip()
+            save_data() # Save permanently
             USER_STATES[user_id] = None
             await update.message.reply_text("✅ **Tier Price Updated!**", parse_mode="Markdown")
             await update.message.reply_text("⚙️ **TIER EDITOR**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
@@ -296,6 +327,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             template_key = current_state.replace("awaiting_edit_", "")
             DYNAMIC_TEXT[template_key] = text
+            save_data() # Save permanently
             USER_STATES[user_id] = None
             await update.message.reply_text("✅ **Text Template Updated!**", parse_mode="Markdown")
             await update.message.reply_text("⚙️ **TEMPLATE EDITOR**", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
@@ -305,6 +337,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             label_key = current_state.replace("awaiting_kbtn_", "")
             BUTTON_LABELS[label_key] = text
+            save_data() # Save permanently
             USER_STATES[user_id] = None
             await update.message.reply_text("✅ **Keyboard saved!**", parse_mode="Markdown")
             await update.message.reply_text("🎛️ **KEYBOARD EDITOR**", reply_markup=get_admin_keyboards_menu(), parse_mode="Markdown")
@@ -313,7 +346,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif current_state == "awaiting_faq_question":
         USER_STATES[user_id] = None
         await safe_send(context, user_id, "✅ **TICKET CREATED**\n➖➖➖➖➖➖➖➖➖➖\n\n📌 **TICKET NUMBER:** #5\n⏳ PLEASE WAIT FOR A RESPONSE", lang=lang)
-        await notify_admin(context, message=f"❓ **NEW FAQ QUESTION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **From:** {user_name} (`{user_id}`)\n📝 **Question:**\n{text}")
+        await notify_admin(context, message=f"❓ **NEW FAQ QUESTION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **From:** {user_display} (`{user_id}`)\n📝 **Question:**\n{text}")
         return
 
     USER_STATES[user_id] = None
@@ -329,8 +362,23 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, DYNAMIC_TEXT["features"], get_back_markup(), lang)
     
     elif text == BUTTON_LABELS["btn_system"]:
-        msg = "⚙️ **SYSTEM STATUS**\n➖➖➖➖➖➖➖➖➖➖\n\n🖥️ **SERVER STATUS**\n├ ✅ **API:** Online\n└ ✅ **SERVICES:** Operational\n\n📊 **PERFORMANCE**\n├ 📶 **UPTIME:** 99.9%\n└ ⚡ **RESPONSE:** < 100ms"
-        await safe_send(context, user_id, msg, get_back_markup(), lang)
+        # --- NEW SYSTEM ANIMATION LOGIC ---
+        delay_time = random.randint(4, 7)
+        
+        # Send initial loading message
+        initial_msg = f"⚙️ **SYSTEM MENU**\n➖➖➖➖➖➖➖➖➖➖\n\n⏳ **CHECKING SYSTEM...**\n🕚 **TIME:** 1s"
+        msg = await context.bot.send_message(chat_id=user_id, text=initial_msg, parse_mode="Markdown")
+        
+        # Count up loop
+        for i in range(2, delay_time + 1):
+            await asyncio.sleep(1)
+            await msg.edit_text(text=f"⚙️ **SYSTEM MENU**\n➖➖➖➖➖➖➖➖➖➖\n\n⏳ **CHECKING SYSTEM...**\n🕚 **TIME:** {i}s", parse_mode="Markdown")
+            
+        await asyncio.sleep(1)
+        
+        # Finally replace it with the true result (translated if necessary)
+        final_msg = "⚙️ **SYSTEM STATUS**\n➖➖➖➖➖➖➖➖➖➖\n\n🖥️ **SERVER STATUS**\n├ ✅ **API:** Online\n└ ✅ **SERVICES:** Operational\n\n📊 **PERFORMANCE**\n├ 📶 **UPTIME:** 99.9%\n└ ⚡ **RESPONSE:** < 100ms"
+        await safe_send(context, user_id, final_msg, get_back_markup(), lang, edit_message=msg)
     
     elif text == BUTTON_LABELS["btn_results"]:
         markup = InlineKeyboardMarkup([[InlineKeyboardButton(f"{BUTTON_LABELS['btn_results']} ↗", url=RESULTS_LINK)], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
@@ -362,25 +410,27 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, msg, get_back_markup(), lang)
         
     else:
-        # Fallback for random typing text (non-command)
         msg = "❌ **ACCESS DENIED**\n➖➖➖➖➖➖➖➖➖➖\n\nYou need an active subscription to use this command."
         await safe_send(context, user_id, msg, lang=lang)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name
+    user = update.effective_user
+    user_id = user.id
+    user_display = get_user_display(user)
     current_state = USER_STATES.get(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
+    
     if current_state == "awaiting_screenshot":
         USER_STATES[user_id] = None
         await safe_send(context, user_id, "✅ **SCREENSHOT RECEIVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment receipt has been successfully submitted to the system.\n⏳ Verification processing window is 15-30 minutes.", lang=lang)
         photo_file_id = update.message.photo[-1].file_id
-        await notify_admin(context, photo=photo_file_id, caption=f"📸 **NEW PAYMENT SCREENSHOT**\n👤 **From:** {user_name} (`{user_id}`)\n⚠️ Action required: Verify deposit.")
+        await notify_admin(context, photo=photo_file_id, caption=f"📸 **NEW PAYMENT SCREENSHOT**\n👤 **From:** {user_display} (`{user_id}`)\n⚠️ Action required: Verify deposit.")
 
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    user_id = query.from_user.id
-    user_name = query.from_user.first_name
+    user = query.from_user
+    user_id = user.id
+    user_display = get_user_display(user)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
     if not query.data.startswith("coin_") and query.data != "check_payment":
@@ -407,6 +457,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     elif query.data.startswith("del_tier_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         idx = int(query.data.replace("del_tier_", ""))
         SUBSCRIPTION_TIERS.pop(idx)
+        save_data() # Save permanently
         await query.message.edit_text("✅ **Tier Deleted.**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
     elif query.data.startswith("edit_tier_label_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         idx = query.data.replace("edit_tier_label_", "")
@@ -453,7 +504,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         parts = query.data.split("_")
         coin, amount = parts[1], parts[2]
         
-        await notify_admin(context, message=f"🧾 **INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_name} (`{user_id}`)\n💰 **Amount:** £{amount}\n🪙 **Coin:** {coin}")
+        await notify_admin(context, message=f"🧾 **INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_display} (`{user_id}`)\n💰 **Amount:** £{amount}\n🪙 **Coin:** {coin}")
         
         await safe_send(context, user_id, "⏳ *Generating invoice...*", lang=lang, edit_message=query.message)
         await asyncio.sleep(1)

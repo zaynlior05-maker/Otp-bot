@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Fetch Variables from Railway
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+ADMIN_ID = os.getenv("ADMIN_ID") # Used to send live notifications to the owner
 
 # Fetch Links from Railway
 SUPPORT_LINK = os.getenv("SUPPORT_LINK", "https://t.me/telegram")
@@ -39,6 +40,17 @@ DYNAMIC_TEXT = {
     "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\nℹ️ **BEFORE CONTACTING**\n├ • CHECK TRANSACTION STATUS\n├ • VERIFY SUBSCRIPTION\n├ • TRY /start COMMAND\n└ • REVIEW FAQ SECTION\n\n➖➖➖➖➖➖➖➖➖➖"),
     "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n├ • PERFORMANCE STATISTICS\n├ • COMMUNITY DISCUSSIONS\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖")
 }
+
+async def notify_admin(context: ContextTypes.DEFAULT_TYPE, message: str = None, photo: str = None, caption: str = None):
+    """Helper function to send live notifications to the Admin ID."""
+    if ADMIN_ID:
+        try:
+            if photo:
+                await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo, caption=caption, parse_mode="Markdown")
+            elif message:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=message, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to notify admin. Is the ADMIN_ID correct? Error: {e}")
 
 def get_main_menu():
     """Main Menu Keyboard Layout"""
@@ -68,13 +80,18 @@ def get_admin_templates_menu():
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", update.effective_user.first_name)
-    USER_STATES[update.effective_user.id] = None
+    user = update.effective_user
+    welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", user.first_name)
+    USER_STATES[user.id] = None
+    
     await update.message.reply_text(welcome_text, reply_markup=get_main_menu(), parse_mode="Markdown")
+    
+    # Notify Admin of new user
+    await notify_admin(context, message=f"🔔 **NEW USER ALERT**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user.first_name}\n🆔 **ID:** `{user.id}`\n└ Started the bot.")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id in ADMINS:
+    if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
         await show_admin_panel(update, context)
     else:
         USER_STATES[user_id] = "awaiting_admin_password"
@@ -88,6 +105,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
     text = update.message.text
     current_state = USER_STATES.get(user_id)
     
@@ -110,6 +128,25 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         USER_STATES[user_id] = None
         await update.message.reply_text(f"✅ **Template Updated Successfully!**\nThe new text for '{template_key.upper()}' is now live.", parse_mode="Markdown")
         await update.message.reply_text("⚙️ **TEMPLATE EDITOR**\nSelect a template to modify:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
+        return
+
+    elif current_state == "awaiting_faq_question":
+        USER_STATES[user_id] = None
+        msg = (
+            "✅ **QUESTION SUBMITTED**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "Your question has been sent to our support team. We will get back to you shortly."
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+        
+        # Notify Admin of the submitted question
+        admin_msg = (
+            f"❓ **NEW FAQ QUESTION**\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n"
+            f"👤 **From:** {user_name} (`{user_id}`)\n\n"
+            f"📝 **Question:**\n{text}"
+        )
+        await notify_admin(context, message=admin_msg)
         return
 
     USER_STATES[user_id] = None
@@ -161,11 +198,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
         await update.message.reply_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
     else:
+        # Generic fallback for any other text
         await update.message.reply_text(f"You selected {text}. This module is currently under construction.", parse_mode="Markdown")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles screenshot uploads for payment verification."""
     user_id = update.effective_user.id
+    user_name = update.effective_user.first_name
     current_state = USER_STATES.get(user_id)
 
     if current_state == "awaiting_screenshot":
@@ -178,6 +217,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "Please allow up to **15-30 minutes** for your balance to be updated."
         )
         await update.message.reply_text(msg, parse_mode="Markdown")
+        
+        # Notify Admin with the photo
+        photo_file_id = update.message.photo[-1].file_id
+        admin_caption = f"📸 **NEW PAYMENT SCREENSHOT**\n➖➖➖➖➖➖➖➖➖➖\n👤 **From:** {user_name} (`{user_id}`)\n⚠️ Action required: Verify deposit and fund user."
+        await notify_admin(context, photo=photo_file_id, caption=admin_caption)
 
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -188,11 +232,13 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.answer()
 
     if query.data == "admin_home":
-        if user_id in ADMINS: await show_admin_panel(update, context)
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID): 
+            await show_admin_panel(update, context)
     elif query.data == "admin_templates":
-        if user_id in ADMINS: await query.message.edit_text("⚙️ **TEMPLATE EDITOR**\nSelect a template:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID): 
+            await query.message.edit_text("⚙️ **TEMPLATE EDITOR**\nSelect a template:", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
     elif query.data.startswith("edit_"):
-        if user_id in ADMINS:
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             template_key = query.data.replace("edit_", "")
             USER_STATES[user_id] = f"awaiting_edit_{template_key}"
             await query.message.edit_text(f"📝 **EDITING: {template_key.upper()}**\n\nPlease type the new text:", parse_mode="Markdown")
@@ -226,7 +272,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
         
     elif query.data.startswith("coin_"):
-        await query.answer() # Answer it manually here to stop the loading wheel
+        await query.answer() 
         parts = query.data.split("_")
         coin, amount = parts[1], parts[2]
         
@@ -252,7 +298,6 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             "SOL": 0.0085
         }
         
-        # Calculate the equivalent crypto amount dynamically
         crypto_amount = float(amount) * rates_to_gbp.get(coin, 1.0)
         
         msg = (
@@ -275,7 +320,6 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
     elif query.data == "check_payment":
-        # Using show_alert=True triggers the actual popup box on the user's screen
         await query.answer("❌ Error: Payment not found on the blockchain. Please allow 5-15 minutes for confirmations, or use 'Send Screenshot' if you have already paid.", show_alert=True)
 
     elif query.data == "send_screenshot":
@@ -326,9 +370,18 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
 
     elif query.data == "faq_ask":
-        await query.message.edit_text("📝 Please type your question.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]]))
+        USER_STATES[user_id] = "awaiting_faq_question"
+        msg = (
+            "❓ **UTILITY PANEL | ASK A QUESTION**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "❔ **ASK A QUESTION**\n"
+            "📝 PLEASE TYPE YOUR QUESTION BELOW\n\n"
+            "➖➖➖➖➖➖➖➖➖➖"
+        )
+        await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]]), parse_mode="Markdown")
         
     elif query.data == "faq_cancel":
+        USER_STATES[user_id] = None
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
         await query.message.edit_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
         

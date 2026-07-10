@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
-# Fetch Support Links from Railway
+# Fetch Links from Railway
 SUPPORT_LINK = os.getenv("SUPPORT_LINK", "https://t.me/telegram")
 CHANNEL_LINK = os.getenv("CHANNEL_LINK", "https://t.me/telegram")
+RESULTS_LINK = os.getenv("RESULTS_LINK", "https://t.me/telegram")
 
 # Fetch Crypto Wallet Addresses from Railway
 LTC_ADDRESS = os.getenv("LTC_ADDRESS", "YOUR_LTC_ADDRESS_NOT_SET")
@@ -34,7 +35,8 @@ DYNAMIC_TEXT = {
     "features": ("⚡ **FEATURES**\n➖➖➖➖➖➖➖➖➖➖\n\n🧠 **SYSTEM STATUS**\n├ 🟢 **STATUS:** Operational\n└ 📈 **UPTIME:** 100%\n\n💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"),
     "payment": ("💳 **PAYMENT METHODS**\n➖➖➖➖➖➖➖➖➖➖\n\n🔗 **DEPOSIT VIA GATEWAY**\n├ Accepted: Crypto Only\n└ Status: **LIVE**\n\n💰 **ACCOUNT BALANCE:** £0.00\n\n👇 **SELECT ACTION**"),
     "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"),
-    "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\nℹ️ **BEFORE CONTACTING**\n├ • CHECK TRANSACTION STATUS\n├ • VERIFY SUBSCRIPTION\n├ • TRY /start COMMAND\n└ • REVIEW FAQ SECTION\n\n➖➖➖➖➖➖➖➖➖➖")
+    "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\nℹ️ **BEFORE CONTACTING**\n├ • CHECK TRANSACTION STATUS\n├ • VERIFY SUBSCRIPTION\n├ • TRY /start COMMAND\n└ • REVIEW FAQ SECTION\n\n➖➖➖➖➖➖➖➖➖➖"),
+    "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n├ • PERFORMANCE STATISTICS\n├ • COMMUNITY DISCUSSIONS\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖")
 }
 
 def get_main_menu():
@@ -61,7 +63,7 @@ def get_admin_templates_menu():
         [InlineKeyboardButton("Welcome Text", callback_data="edit_welcome"), InlineKeyboardButton("FAQ Text", callback_data="edit_faq")],
         [InlineKeyboardButton("Features Text", callback_data="edit_features"), InlineKeyboardButton("Payment Text", callback_data="edit_payment")],
         [InlineKeyboardButton("Dashboard Text", callback_data="edit_dashboard"), InlineKeyboardButton("Support Text", callback_data="edit_support")],
-        [InlineKeyboardButton("🔙 Back to Admin Menu", callback_data="admin_home")]
+        [InlineKeyboardButton("Results Text", callback_data="edit_results"), InlineKeyboardButton("🔙 Back", callback_data="admin_home")]
     ])
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -120,9 +122,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg = "⚙️ **SYSTEM STATUS**\n➖➖➖➖➖➖➖➖➖➖\n\n🖥️ **SERVER STATUS**\n├ ✅ **API:** Online\n└ ✅ **SERVICES:** Operational\n\n📊 **PERFORMANCE**\n├ 📶 **UPTIME:** 99.9%\n└ ⚡ **RESPONSE:** < 100ms"
         await update.message.reply_text(msg, parse_mode="Markdown")
     elif text == "📈 RESULTS":
-        msg = "📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("VIEW RESULTS ↗", url="https://github.com")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("📈 VIEW RESULTS ↗", url=RESULTS_LINK)]])
+        await update.message.reply_text(DYNAMIC_TEXT["results"], reply_markup=markup, parse_mode="Markdown")
     elif text == "📋 COMMANDS":
         msg = "📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ ⚙️ /admin"
         await update.message.reply_text(msg, parse_mode="Markdown")
@@ -137,10 +138,24 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif text == "💳 PAYMENT":
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await update.message.reply_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
+    
     elif text == "👤 PROFILE":
-        msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT ID:** `{update.effective_user.id}`\n├ 💰 **BALANCE:** £0.00\n└ ⚡ **ACTIONS:** 0"
+        msg = (
+            f"👤 **USER PROFILE**\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n\n"
+            f"🆔 **ACCOUNT DETAILS**\n"
+            f"├ 👤 **ID:** `{update.effective_user.id}`\n"
+            f"├ 👑 **RANK:** Standard\n"
+            f"├ 📅 **DAYS ACTIVE:** 0\n"
+            f"├ 📞 **CALLS ACCEPTED:** 0\n"
+            f"├ 📈 **SUCCESS RATE:** 0%\n"
+            f"├ 💰 **BALANCE:** £0.00\n"
+            f"└ ⚡ **ACTIONS:** 0\n\n"
+            f"➖➖➖➖➖➖➖➖➖➖"
+        )
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("💰 Deposit", callback_data="pay_add")], [InlineKeyboardButton("📝 History", callback_data="pay_history")]])
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        
     elif text == "❓ FAQ":
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
         await update.message.reply_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
@@ -165,6 +180,12 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         if user_id in ADMINS:
             ADMINS.discard(user_id)
             await query.message.edit_text("🚪 **Logged out.**", parse_mode="Markdown")
+            
+    elif query.data == "trigger_payment":
+        # Directs user immediately to the Payment Gateway page
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
+        await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
+        
     elif query.data == "pay_add":
         msg = "💰 **DEPOSIT FUNDS**\n➖➖➖➖➖➖➖➖➖➖\n\n👇 **CHOOSE AMOUNT:**"
         markup = InlineKeyboardMarkup([
@@ -192,13 +213,17 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         msg = f"🪙 **{coin} DEPOSIT**\n\nSend to:\n`{addr}`\n\nAmount: ~£{amount}"
         await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]]), parse_mode="Markdown")
     elif query.data == "pay_cancel":
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
+    elif query.data == "pay_history":
+        await query.answer("📜 No transaction records found.", show_alert=True)
     elif query.data == "faq_ask":
         await query.message.edit_text("📝 Please type your question.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="faq_cancel")]]))
     elif query.data == "faq_cancel":
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("← MENU", callback_data="faq_menu")]])
         await query.message.edit_text(DYNAMIC_TEXT["faq"], reply_markup=markup, parse_mode="Markdown")
+    elif query.data == "faq_menu":
+        await query.message.delete()
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()

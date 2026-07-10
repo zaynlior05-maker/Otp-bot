@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 ADMIN_ID = os.getenv("ADMIN_ID")
-GROUP_LOG_ID = os.getenv("GROUP_LOG_ID") # NEW: Group Chat ID for console logs
+GROUP_LOG_ID = os.getenv("GROUP_LOG_ID") 
 
 # Fetch Links from Railway
 SUPPORT_LINK = os.getenv("SUPPORT_LINK", "https://t.me/telegram")
@@ -32,9 +32,9 @@ SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 ADMINS = set()
 USER_STATES = {}
 USER_LANGUAGES = {} 
-TEMP_TIER = {} # Temporary memory for when admin is building a new tier
+TEMP_TIER = {} 
 
-# Dynamic Subscription Tiers (Admin can now add/remove these)
+# Dynamic Subscription Tiers
 SUBSCRIPTION_TIERS = [
     {"label": "Daily £15", "val": "15"},
     {"label": "Weekly £30", "val": "30"},
@@ -58,7 +58,7 @@ DYNAMIC_TEXT = {
     "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"),
     "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\n➖➖➖➖➖➖➖➖➖➖"),
     "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖"),
-    "commands": ("📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ ⚙️ /admin")
+    "commands": ("📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ 💳 /purchase\n◆ ⚙️ /admin")
 }
 
 BUTTON_LABELS = {
@@ -102,7 +102,6 @@ async def safe_send(context, chat_id, text, markup=None, lang='en', edit_message
 
 # --- Notification System ---
 async def notify_admin(context: ContextTypes.DEFAULT_TYPE, message: str = None, photo: str = None, caption: str = None):
-    """Sends logs to both the private Admin ID and the Group Chat Console"""
     targets = []
     if ADMIN_ID: targets.append(ADMIN_ID)
     if GROUP_LOG_ID: targets.append(GROUP_LOG_ID)
@@ -180,9 +179,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     lang = USER_LANGUAGES.get(user.id, 'en')
     welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", user.first_name)
     USER_STATES[user.id] = None
+    
+    # Send the Welcome Text and attach the Main Menu Reply Keyboard
     await safe_send(context, user.id, welcome_text, get_main_menu(), lang)
     
-    # Send Log to Console
+    # Immediately send the inline Activate button (Dashboard style)
+    activate_markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")]])
+    await safe_send(context, user.id, "👇 **QUICK ACTION**", activate_markup, lang)
+    
     await notify_admin(context, message=f"🟢 **BOT STARTED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user.first_name}\n🆔 **ID:** `{user.id}`\n└ User launched the bot.")
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -191,6 +195,25 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     else:
         USER_STATES[user_id] = "awaiting_admin_password"
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
+
+# --- New Command Routing ---
+async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    lang = USER_LANGUAGES.get(user_id, 'en')
+    await safe_send(context, user_id, DYNAMIC_TEXT["activate"], get_tiers_markup(), lang)
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    lang = USER_LANGUAGES.get(user_id, 'en')
+    markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
+    await safe_send(context, user_id, DYNAMIC_TEXT["faq"], markup, lang)
+
+async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Catches any unrecognized /commands and blocks them"""
+    user_id = update.effective_user.id
+    lang = USER_LANGUAGES.get(user_id, 'en')
+    msg = "❌ **ACCESS DENIED**\n➖➖➖➖➖➖➖➖➖➖\n\nYou need an active subscription to use this command."
+    await safe_send(context, user_id, msg, lang=lang)
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     msg = "⚙️ **ADMIN CONTROL PANEL**\n➖➖➖➖➖➖➖➖➖➖\n\nSelect a configuration layer below:"
@@ -205,11 +228,9 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     current_state = USER_STATES.get(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
-    # General Console Log for Menu Navigations
     if text in BUTTON_LABELS.values():
         await notify_admin(context, message=f"🖱️ **MENU NAVIGATION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_name} (`{user_id}`)\n➡️ **Clicked:** `{text}`")
     
-    # Handle Active Admin/System States
     if current_state == "awaiting_admin_password":
         if text == ADMIN_PASSWORD:
             ADMINS.add(user_id)
@@ -297,7 +318,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     USER_STATES[user_id] = None
 
-    # Normal User Routing
     if text == BUTTON_LABELS["btn_dashboard"]:
         markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
         await safe_send(context, user_id, DYNAMIC_TEXT["dashboard"], markup, lang)
@@ -325,7 +345,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     elif text == BUTTON_LABELS["btn_profile"]:
         msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT DETAILS**\n├ 👤 **ID:** `{user_id}`\n├ 👑 **RANK:** Free Tier\n├ 📅 **DAYS ACTIVE:** 0\n├ 💰 **BALANCE:** £0.00\n└ ⚡ **ACTIONS:** 0\n\n➖➖➖➖➖➖➖➖➖➖"
-        # Adjusted exact layout from Image Request
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("💰 Deposit", callback_data="trigger_payment")], 
             [InlineKeyboardButton("📜 History", callback_data="view_history")],
@@ -343,7 +362,9 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, msg, get_back_markup(), lang)
         
     else:
-        await safe_send(context, user_id, "Command not recognized. Please use the layout setup panel lower menu.", lang=lang)
+        # Fallback for random typing text (non-command)
+        msg = "❌ **ACCESS DENIED**\n➖➖➖➖➖➖➖➖➖➖\n\nYou need an active subscription to use this command."
+        await safe_send(context, user_id, msg, lang=lang)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -461,11 +482,21 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
+    
+    # Standard Commands
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("purchase", purchase_command)) 
+    application.add_handler(CommandHandler("help", help_command)) 
+    
+    # Catch-all Command block (Must be under the real commands)
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command)) 
+    
+    # Content Listeners
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_clicks))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(CallbackQueryHandler(handle_inline_callbacks))
+    
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":

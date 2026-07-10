@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
+# Fetch Support Links from Railway
+SUPPORT_LINK = os.getenv("SUPPORT_LINK", "https://t.me/telegram")
+CHANNEL_LINK = os.getenv("CHANNEL_LINK", "https://t.me/telegram")
+
 # Fetch Crypto Wallet Addresses from Railway
 LTC_ADDRESS = os.getenv("LTC_ADDRESS", "YOUR_LTC_ADDRESS_NOT_SET")
 BTC_ADDRESS = os.getenv("BTC_ADDRESS", "YOUR_BTC_ADDRESS_NOT_SET")
@@ -29,11 +33,12 @@ DYNAMIC_TEXT = {
     "faq": ("❓ **UTILITY PANEL | FAQ**\n➖➖➖➖➖➖➖➖➖➖\n\n❓ **WHAT IS THIS BOT?**\n├ A premium utility solution for managing automated tasks.\n├ Navigate using the control panel below.\n\n➖➖➖➖➖➖➖➖➖➖"),
     "features": ("⚡ **FEATURES**\n➖➖➖➖➖➖➖➖➖➖\n\n🧠 **SYSTEM STATUS**\n├ 🟢 **STATUS:** Operational\n└ 📈 **UPTIME:** 100%\n\n💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"),
     "payment": ("💳 **PAYMENT METHODS**\n➖➖➖➖➖➖➖➖➖➖\n\n🔗 **DEPOSIT VIA GATEWAY**\n├ Accepted: Crypto Only\n└ Status: **LIVE**\n\n💰 **ACCOUNT BALANCE:** £0.00\n\n👇 **SELECT ACTION**"),
-    "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖")
+    "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"),
+    "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\nℹ️ **BEFORE CONTACTING**\n├ • CHECK TRANSACTION STATUS\n├ • VERIFY SUBSCRIPTION\n├ • TRY /start COMMAND\n└ • REVIEW FAQ SECTION\n\n➖➖➖➖➖➖➖➖➖➖")
 }
 
 def get_main_menu():
-    """Updated: Removed Activate, Subscription, and Partner buttons."""
+    """Main Menu Keyboard Layout"""
     keyboard = [
         [KeyboardButton("📊 DASHBOARD")],
         [KeyboardButton("💳 PAYMENT"), KeyboardButton("⚡ FEATURES"), KeyboardButton("⚙️ SYSTEM")],
@@ -55,7 +60,7 @@ def get_admin_templates_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("Welcome Text", callback_data="edit_welcome"), InlineKeyboardButton("FAQ Text", callback_data="edit_faq")],
         [InlineKeyboardButton("Features Text", callback_data="edit_features"), InlineKeyboardButton("Payment Text", callback_data="edit_payment")],
-        [InlineKeyboardButton("Dashboard Text", callback_data="edit_dashboard")],
+        [InlineKeyboardButton("Dashboard Text", callback_data="edit_dashboard"), InlineKeyboardButton("Support Text", callback_data="edit_support")],
         [InlineKeyboardButton("🔙 Back to Admin Menu", callback_data="admin_home")]
     ])
 
@@ -122,9 +127,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         msg = "📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ ⚙️ /admin"
         await update.message.reply_text(msg, parse_mode="Markdown")
     elif text == "💬 SUPPORT":
-        msg = "💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h"
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("💬 SUPPORT ↗", url="https://t.me/telegram")]])
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
+        markup = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("💬 SUPPORT ↗", url=SUPPORT_LINK), 
+                InlineKeyboardButton("📢 CHANNEL ↗", url=CHANNEL_LINK)
+            ]
+        ])
+        await update.message.reply_text(DYNAMIC_TEXT["support"], reply_markup=markup, parse_mode="Markdown")
     elif text == "💳 PAYMENT":
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await update.message.reply_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")

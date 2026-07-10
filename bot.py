@@ -163,6 +163,22 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     else:
         await update.message.reply_text(f"You selected {text}. This module is currently under construction.", parse_mode="Markdown")
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles screenshot uploads for payment verification."""
+    user_id = update.effective_user.id
+    current_state = USER_STATES.get(user_id)
+
+    if current_state == "awaiting_screenshot":
+        USER_STATES[user_id] = None # Reset state
+        msg = (
+            "✅ **SCREENSHOT RECEIVED**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "Your payment receipt has been successfully submitted to the system.\n\n"
+            "⏳ Our administrators are currently verifying the transaction on the blockchain. "
+            "Please allow up to **15-30 minutes** for your balance to be updated."
+        )
+        await update.message.reply_text(msg, parse_mode="Markdown")
+
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user_id = query.from_user.id
@@ -222,10 +238,44 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             "SOL": SOL_ADDRESS
         }.get(coin, "N/A")
         
-        msg = f"🪙 **{coin} DEPOSIT**\n\nSend to:\n`{addr}`\n\nAmount: ~£{amount}"
-        await query.message.edit_text(msg, reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]]), parse_mode="Markdown")
+        # New Detailed Invoice Layout
+        msg = (
+            f"💳 **PAYMENT INVOICE GENERATED**\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n\n"
+            f"🌐 **NETWORK:** {coin}\n"
+            f"⚠️ **WARNING:** Send ONLY **{coin}** to the address below using its native network.\n\n"
+            f"💰 **AMOUNT DUE:** `~{amount}` {coin} (£{amount})\n"
+            f"📬 **DEPOSIT ADDRESS:**\n`{addr}`\n\n"
+            f"*(Tap the address above to copy it)*\n\n"
+            f"➖➖➖➖➖➖➖➖➖➖\n"
+            f"⏳ **Status:** Waiting for payment..."
+        )
         
+        # New Buttons including Check Payment and Send Screenshot
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")],
+            [InlineKeyboardButton("📸 Send Screenshot", callback_data="send_screenshot")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]
+        ])
+        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+        
+    elif query.data == "check_payment":
+        # Professional Error Alert for Check Payment
+        await query.answer("❌ Error: Payment not found on the blockchain. Please allow 5-15 minutes for confirmations, or use 'Send Screenshot' if you have already paid.", show_alert=True)
+
+    elif query.data == "send_screenshot":
+        # Activates the screenshot waiting state
+        USER_STATES[user_id] = "awaiting_screenshot"
+        msg = (
+            "📸 **UPLOAD SCREENSHOT**\n"
+            "➖➖➖➖➖➖➖➖➖➖\n\n"
+            "Please send the screenshot or receipt of your successful transaction here."
+        )
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="pay_cancel")]])
+        await query.message.edit_text(msg, reply_markup=markup, parse_mode="Markdown")
+
     elif query.data == "pay_cancel":
+        USER_STATES[user_id] = None # Clear state just in case
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("➕ ADD FUNDS", callback_data="pay_add")], [InlineKeyboardButton("📜 HISTORY", callback_data="pay_history")]])
         await query.message.edit_text(DYNAMIC_TEXT["payment"], reply_markup=markup, parse_mode="Markdown")
         
@@ -273,10 +323,17 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
 def main() -> None:
     application = Application.builder().token(TOKEN).build()
+    
+    # Message Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu_clicks))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo)) # New handler for screenshots
+    
+    # Callback Handlers
     application.add_handler(CallbackQueryHandler(handle_inline_callbacks))
+    
+    # Run
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":

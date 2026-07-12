@@ -31,7 +31,7 @@ ETH_ADDRESS = os.getenv("ETH_ADDRESS", "YOUR_ETH_ADDRESS_NOT_SET")
 SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 
 # System Configurations
-REQUIRED_DASHBOARD_BALANCE = 300.0  # The minimum balance required to unlock the dashboard
+REQUIRED_DASHBOARD_BALANCE = 300.0  
 
 # Global Memory Variables
 ADMINS = set()
@@ -39,7 +39,7 @@ USER_STATES = {}
 USER_LANGUAGES = {} 
 TEMP_TIER = {} 
 ALL_USERS = [] 
-USER_BALANCES = {} # Tracks the £ balance of every user
+USER_BALANCES = {} 
 
 # --- PERSISTENT STORAGE PATH ---
 DATA_DIR = "/app/data"
@@ -97,7 +97,6 @@ def save_data():
             "balances": USER_BALANCES
         }, f)
 
-# Inject loaded data at startup
 data = load_data()
 DYNAMIC_TEXT.update(data.get("templates", {}))
 BUTTON_LABELS.update(data.get("labels", {}))
@@ -110,7 +109,6 @@ def register_user(user_id):
         ALL_USERS.append(user_id)
         save_data()
 
-# --- Format Username Helper ---
 def get_user_display(user):
     username = f" (@{user.username})" if user.username else ""
     return f"{user.first_name}{username}"
@@ -244,22 +242,42 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
 async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Answers a specific user via ID."""
     user_id = update.effective_user.id
     if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
         
     args = context.args
     if len(args) < 2:
-        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/reply <user_id> <message>`\nExample: `/reply 123456789 Hello there!`", parse_mode="Markdown")
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/reply <user_id> <message>`", parse_mode="Markdown")
         return
         
     target_user = args[0]
     message_content = " ".join(args[1:])
     
     try:
-        await context.bot.send_message(chat_id=target_user, text=f"📩 **ADMIN SUPPORT RESPONSE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
+        await context.bot.send_message(chat_id=target_user, text=f"📩 **SUPPORT RESPONSE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
         await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}`.**", parse_mode="Markdown")
     except:
-        await update.message.reply_text(f"❌ **Failed to send message:**\nUser may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
+
+async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Directly messages a specific user via ID."""
+    user_id = update.effective_user.id
+    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+        
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/send <user_id> <message>`", parse_mode="Markdown")
+        return
+        
+    target_user = args[0]
+    message_content = " ".join(args[1:])
+    
+    try:
+        await context.bot.send_message(chat_id=target_user, text=f"📩 **ADMIN MESSAGE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ **Message successfully sent to user `{target_user}`.**", parse_mode="Markdown")
+    except:
+        await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
 async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -416,7 +434,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         ])
 
         if balance == 0.0:
-            # Show exact design from Image_12 for zero balance users
             msg = (
                 "🕶️ **RDX OTP BOT | DASHBOARD** 🕶️\n"
                 "➖➖➖➖➖➖➖➖➖➖\n\n"
@@ -429,7 +446,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await safe_send(context, user_id, msg, markup, lang)
             
         elif balance < REQUIRED_DASHBOARD_BALANCE:
-            # Show the upgrade restriction warning if they have some balance but not enough
             msg = (
                 f"🛑 **DASHBOARD BLOCKED**\n"
                 f"➖➖➖➖➖➖➖➖➖➖\n"
@@ -442,7 +458,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await safe_send(context, user_id, msg, markup, lang)
             
         else:
-            # Full access if balance is sufficient
             await safe_send(context, user_id, DYNAMIC_TEXT["dashboard"], markup, lang)
     
     elif text == BUTTON_LABELS["btn_activate"]:
@@ -659,6 +674,7 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("reply", reply_command)) 
+    application.add_handler(CommandHandler("send", send_command)) 
     application.add_handler(CommandHandler("purchase", purchase_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     

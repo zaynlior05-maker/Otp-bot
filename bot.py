@@ -30,16 +30,21 @@ USDT_ERC20_ADDRESS = os.getenv("USDT_ERC20_ADDRESS", "YOUR_USDT_ERC20_ADDRESS_NO
 ETH_ADDRESS = os.getenv("ETH_ADDRESS", "YOUR_ETH_ADDRESS_NOT_SET")
 SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 
+# System Configurations
+REQUIRED_DASHBOARD_BALANCE = 300.0  # The minimum balance required to unlock the dashboard
+
 # Global Memory Variables
 ADMINS = set()
 USER_STATES = {}
 USER_LANGUAGES = {} 
 TEMP_TIER = {} 
+ALL_USERS = [] 
+USER_BALANCES = {} # Tracks the £ balance of every user
 
 # --- PERSISTENT STORAGE PATH ---
 DATA_DIR = "/app/data"
 if not os.path.exists(DATA_DIR):
-    DATA_DIR = "." # Fallback for local testing
+    DATA_DIR = "." 
 DATA_FILE = os.path.join(DATA_DIR, "bot_data.json")
 
 # Default Subscription Tiers
@@ -63,7 +68,7 @@ DYNAMIC_TEXT = {
     "faq": ("❓ **UTILITY PANEL | FAQ**\n➖➖➖➖➖➖➖➖➖➖\n\n❓ **WHAT IS THIS BOT?**\n├ A premium utility solution for managing automated tasks.\n├ Navigate using the control panel below.\n\n➖➖➖➖➖➖➖➖➖➖"),
     "features": ("⚡ **FEATURES**\n➖➖➖➖➖➖➖➖➖➖\n\n🧠 **SYSTEM STATUS**\n├ 🟢 **STATUS:** Operational\n└ 📈 **UPTIME:** 100%\n\n💬 **OUR UTILITY BOT IS PACKED WITH ADVANCED FEATURES!**"),
     "activate": ("💰 **SELECT SUBSCRIPTION PLAN**\n➖➖➖➖➖➖➖➖➖➖\n\n👇 **CHOOSE AMOUNT:**"),
-    "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n⛔ **ACCESS DENIED**\n├ 💳 **NO ACTIVE SUBSCRIPTION**\n└ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n➖➖➖➖➖➖➖➖➖➖"),
+    "dashboard": ("📊 **UTILITY DASHBOARD**\n➖➖➖➖➖➖➖➖➖➖\n\n✅ **ACCESS GRANTED**\nWelcome to your private utility terminal.\n\n➖➖➖➖➖➖➖➖➖➖"),
     "support": ("💬 **SUPPORT**\n➖➖➖➖➖➖➖➖➖➖\n\n📡 **SUPPORT STATUS**\n├ 🟢 **STATUS:** Active\n└ ⏱️ **RESPONSE:** 2-6h\n\n💬 **COMMON TOPICS**\n├ • PAYMENT PROCESSING\n├ • SUBSCRIPTION ACTIVATION\n├ • BOT SUPPORT\n└ • TECHNICAL ISSUES\n\n➖➖➖➖➖➖➖➖➖➖"),
     "results": ("📈 **RESULTS**\n➖➖➖➖➖➖➖➖➖➖\n\n⭐ **REVIEWS & PERFORMANCE**\n├ • AUTHENTIC USER REVIEWS\n├ • SUCCESS STORIES\n└ • LATEST UPDATES\n\n🌐 **JOIN OUR COMMUNITY**\n👇 **CLICK BELOW**\n\n➖➖➖➖➖➖➖➖➖➖"),
     "commands": ("📋 **COMMANDS**\n🟢 **OPERATIONAL | 📈 UPTIME: 100%**\n➖➖➖➖➖➖➖➖➖➖\n\n🤖 **MAIN COMMANDS**\n◆ 📓 /help\n◆ 💳 /purchase\n◆ ⚙️ /admin")
@@ -80,17 +85,30 @@ BUTTON_LABELS = {
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f: return json.load(f)
-    return {"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS}
+    return {"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS, "users": [], "balances": {}}
 
 def save_data():
     with open(DATA_FILE, "w") as f:
-        json.dump({"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS}, f)
+        json.dump({
+            "templates": DYNAMIC_TEXT, 
+            "labels": BUTTON_LABELS, 
+            "tiers": SUBSCRIPTION_TIERS, 
+            "users": ALL_USERS,
+            "balances": USER_BALANCES
+        }, f)
 
 # Inject loaded data at startup
 data = load_data()
 DYNAMIC_TEXT.update(data.get("templates", {}))
 BUTTON_LABELS.update(data.get("labels", {}))
 SUBSCRIPTION_TIERS = data.get("tiers", SUBSCRIPTION_TIERS)
+ALL_USERS = data.get("users", [])
+USER_BALANCES = data.get("balances", {})
+
+def register_user(user_id):
+    if user_id not in ALL_USERS:
+        ALL_USERS.append(user_id)
+        save_data()
 
 # --- Format Username Helper ---
 def get_user_display(user):
@@ -130,15 +148,15 @@ async def safe_send(context, chat_id, text, markup=None, lang='en', edit_message
         else: await context.bot.send_message(chat_id=chat_id, text=trans_text, reply_markup=trans_markup)
 
 # --- Notification System ---
-async def notify_admin(context: ContextTypes.DEFAULT_TYPE, message: str = None, photo: str = None, caption: str = None):
+async def notify_admin(context: ContextTypes.DEFAULT_TYPE, message: str = None, photo: str = None, caption: str = None, markup=None):
     targets = []
     if ADMIN_ID: targets.append(ADMIN_ID)
     if GROUP_LOG_ID: targets.append(GROUP_LOG_ID)
     
     for target in targets:
         try:
-            if photo: await context.bot.send_photo(chat_id=target, photo=photo, caption=caption, parse_mode="Markdown")
-            elif message: await context.bot.send_message(chat_id=target, text=message, parse_mode="Markdown")
+            if photo: await context.bot.send_photo(chat_id=target, photo=photo, caption=caption, reply_markup=markup, parse_mode="Markdown")
+            elif message: await context.bot.send_message(chat_id=target, text=message, reply_markup=markup, parse_mode="Markdown")
         except: pass
 
 # --- Menu Builders ---
@@ -158,6 +176,7 @@ def get_admin_main_menu():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📝 Edit Messages", callback_data="admin_templates"), InlineKeyboardButton("🎛️ Edit Main Menus", callback_data="admin_keyboards")], 
         [InlineKeyboardButton("💰 Manage Subscription Tiers", callback_data="admin_tiers")],
+        [InlineKeyboardButton("📢 Broadcast Message", callback_data="admin_broadcast")],
         [InlineKeyboardButton("❌ Close Menu", callback_data="admin_logout")]
     ])
 
@@ -205,6 +224,7 @@ def get_tiers_markup():
 # --- Core Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
+    register_user(user.id)
     lang = USER_LANGUAGES.get(user.id, 'en')
     welcome_text = DYNAMIC_TEXT["welcome"].replace("{name}", user.first_name)
     USER_STATES[user.id] = None
@@ -223,13 +243,33 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         USER_STATES[user_id] = "awaiting_admin_password"
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+        
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/reply <user_id> <message>`\nExample: `/reply 123456789 Hello there!`", parse_mode="Markdown")
+        return
+        
+    target_user = args[0]
+    message_content = " ".join(args[1:])
+    
+    try:
+        await context.bot.send_message(chat_id=target_user, text=f"📩 **ADMIN SUPPORT RESPONSE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}`.**", parse_mode="Markdown")
+    except:
+        await update.message.reply_text(f"❌ **Failed to send message:**\nUser may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
+
 async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    register_user(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     await safe_send(context, user_id, DYNAMIC_TEXT["activate"], get_tiers_markup(), lang)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
+    register_user(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
     await safe_send(context, user_id, DYNAMIC_TEXT["faq"], markup, lang)
@@ -238,10 +278,7 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user_id = update.effective_user.id
     lang = USER_LANGUAGES.get(user_id, 'en')
     msg = "❌ **ACCESS DENIED**\n➖➖➖➖➖➖➖➖➖➖\n\nYou need an active subscription to use this command."
-    
-    # ADDED: Quick Activate Inline Button for failed commands
     markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")]])
-    
     await safe_send(context, user_id, msg, markup, lang=lang)
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -253,6 +290,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     user_id = user.id
+    register_user(user_id)
     user_display = get_user_display(user)
     text = update.message.text
     current_state = USER_STATES.get(user_id)
@@ -272,6 +310,21 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         else:
             USER_STATES[user_id] = None
             await update.message.reply_text("❌ **Incorrect Password.**", parse_mode="Markdown")
+        return
+
+    elif current_state == "awaiting_broadcast_message":
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            USER_STATES[user_id] = None
+            await update.message.reply_text(f"🚀 **BROADCAST INITIATED**\nSending message to {len(ALL_USERS)} users...", parse_mode="Markdown")
+            success_count = 0
+            for uid in ALL_USERS:
+                try:
+                    await context.bot.send_message(chat_id=uid, text=f"📢 **GLOBAL ANNOUNCEMENT**\n➖➖➖➖➖➖➖➖➖➖\n\n{text}", parse_mode="Markdown")
+                    success_count += 1
+                    await asyncio.sleep(0.05) 
+                except: pass 
+            await update.message.reply_text(f"✅ **BROADCAST COMPLETE**\nSuccessfully delivered to {success_count} users.", parse_mode="Markdown")
+            await show_admin_panel(update, context)
         return
         
     elif current_state == "awaiting_new_tier_label":
@@ -347,15 +400,50 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     elif current_state == "awaiting_faq_question":
         USER_STATES[user_id] = None
-        await safe_send(context, user_id, "✅ **TICKET CREATED**\n➖➖➖➖➖➖➖➖➖➖\n\n📌 **TICKET NUMBER:** #5\n⏳ PLEASE WAIT FOR A RESPONSE", lang=lang)
-        await notify_admin(context, message=f"❓ **NEW FAQ QUESTION**\n➖➖➖➖➖➖➖➖➖➖\n👤 **From:** {user_display} (`{user_id}`)\n📝 **Question:**\n{text}")
+        await safe_send(context, user_id, "✅ **MESSAGE DELIVERED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour message has been sent directly to the support team.\n⏳ Please wait for a direct response.", lang=lang)
+        log_msg = f"❓ **NEW DIRECT SUPPORT MESSAGE**\n➖➖➖➖➖➖➖➖➖➖\n👤 **From:** {user_display}\n🆔 **User ID:** `{user_id}`\n\n📝 **Message Body:**\n{text}\n\n➖➖➖➖➖➖➖➖➖➖\n💡 **TO REPLY, COPY AND PASTE THIS COMMAND:**\n`/reply {user_id} type your message here`"
+        await notify_admin(context, message=log_msg)
         return
 
     USER_STATES[user_id] = None
 
     if text == BUTTON_LABELS["btn_dashboard"]:
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
-        await safe_send(context, user_id, DYNAMIC_TEXT["dashboard"], markup, lang)
+        balance = USER_BALANCES.get(str(user_id), 0.0)
+        
+        markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(BUTTON_LABELS["btn_activate"], callback_data="trigger_payment")], 
+            [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]
+        ])
+
+        if balance == 0.0:
+            # Show exact design from Image_12 for zero balance users
+            msg = (
+                "🕶️ **RDX OTP BOT | DASHBOARD** 🕶️\n"
+                "➖➖➖➖➖➖➖➖➖➖\n\n"
+                "╭ ❌ **ACCESS DENIED**\n"
+                "├ 💳 **NO ACTIVE SUBSCRIPTION**\n"
+                "╰ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
+                "➖➖➖➖➖➖➖➖➖➖\n"
+                "🕶️ **RDX OTP BOT** 🕶️"
+            )
+            await safe_send(context, user_id, msg, markup, lang)
+            
+        elif balance < REQUIRED_DASHBOARD_BALANCE:
+            # Show the upgrade restriction warning if they have some balance but not enough
+            msg = (
+                f"🛑 **DASHBOARD BLOCKED**\n"
+                f"➖➖➖➖➖➖➖➖➖➖\n"
+                f"⚠️ **ACCESS DENIED**\n\n"
+                f"Access to the primary dashboard is currently restricted. Your account does not meet the minimum subscription plan required for new users.\n\n"
+                f"💰 **Current Balance:** £{balance:.2f}\n"
+                f"📋 **Required Plan:** £{REQUIRED_DASHBOARD_BALANCE:.2f}\n\n"
+                f"💳 **Please activate your account to proceed.**"
+            )
+            await safe_send(context, user_id, msg, markup, lang)
+            
+        else:
+            # Full access if balance is sufficient
+            await safe_send(context, user_id, DYNAMIC_TEXT["dashboard"], markup, lang)
     
     elif text == BUTTON_LABELS["btn_activate"]:
         await safe_send(context, user_id, DYNAMIC_TEXT["activate"], get_tiers_markup(), lang)
@@ -388,7 +476,8 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, DYNAMIC_TEXT["support"], markup, lang)
     
     elif text == BUTTON_LABELS["btn_profile"]:
-        msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT DETAILS**\n├ 👤 **ID:** `{user_id}`\n├ 👑 **RANK:** Free Tier\n├ 📅 **DAYS ACTIVE:** 0\n├ 💰 **BALANCE:** £0.00\n└ ⚡ **ACTIONS:** 0\n\n➖➖➖➖➖➖➖➖➖➖"
+        balance = USER_BALANCES.get(str(user_id), 0.0)
+        msg = f"👤 **USER PROFILE**\n➖➖➖➖➖➖➖➖➖➖\n\n🆔 **ACCOUNT DETAILS**\n├ 👤 **ID:** `{user_id}`\n├ 👑 **RANK:** Free Tier\n├ 📅 **DAYS ACTIVE:** 0\n├ 💰 **BALANCE:** £{balance:.2f}\n└ ⚡ **ACTIONS:** 0\n\n➖➖➖➖➖➖➖➖➖➖"
         markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("💰 Deposit", callback_data="trigger_payment")], 
             [InlineKeyboardButton("📜 History", callback_data="view_history")],
@@ -397,7 +486,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, msg, markup, lang)
     
     elif text == BUTTON_LABELS["btn_faq"]:
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION", callback_data="faq_ask")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("❓ ASK A QUESTION / CONTACT SUPPORT", callback_data="faq_ask")], [InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]])
         await safe_send(context, user_id, DYNAMIC_TEXT["faq"], markup, lang)
         
     elif text == BUTTON_LABELS["btn_language"]:
@@ -406,7 +495,6 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await safe_send(context, user_id, msg, get_back_markup(), lang)
         
     else:
-        # ADDED: Bot will now stay completely silent if random, non-command text is typed.
         return
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -416,11 +504,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     current_state = USER_STATES.get(user_id)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
-    if current_state == "awaiting_screenshot":
+    if current_state and current_state.startswith("awaiting_screenshot_"):
+        amount = current_state.split("_")[2]
         USER_STATES[user_id] = None
-        await safe_send(context, user_id, "✅ **SCREENSHOT RECEIVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment receipt has been successfully submitted to the system.\n⏳ Verification processing window is 15-30 minutes.", lang=lang)
+        await safe_send(context, user_id, "✅ **SCREENSHOT RECEIVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment receipt has been successfully submitted to the system.\n⏳ Verification processing window is 1-15 minutes.", lang=lang)
         photo_file_id = update.message.photo[-1].file_id
-        await notify_admin(context, photo=photo_file_id, caption=f"📸 **NEW PAYMENT SCREENSHOT**\n👤 **From:** {user_display} (`{user_id}`)\n⚠️ Action required: Verify deposit.")
+        
+        approval_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"✅ Approve £{amount}", callback_data=f"approve_payment_{user_id}_{amount}")],
+            [InlineKeyboardButton("❌ Reject Payment", callback_data=f"reject_payment_{user_id}")]
+        ])
+        
+        await notify_admin(context, photo=photo_file_id, caption=f"📸 **NEW PAYMENT SCREENSHOT**\n👤 **From:** {user_display} (`{user_id}`)\n💰 **Expected Amount:** £{amount}\n\n⚠️ Action required: Verify and Accept/Reject.", markup=approval_markup)
 
 async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
@@ -438,6 +533,32 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         except: pass
         return
 
+    # --- ADMIN APPROVAL HANDLERS ---
+    if query.data.startswith("approve_payment_"):
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            parts = query.data.split("_")
+            target_user = parts[2]
+            amount = float(parts[3])
+            
+            current_bal = USER_BALANCES.get(str(target_user), 0.0)
+            USER_BALANCES[str(target_user)] = current_bal + amount
+            save_data()
+            
+            await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
+            
+            try: await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
+            except: pass
+        return
+
+    elif query.data.startswith("reject_payment_"):
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            target_user = query.data.split("_")[2]
+            await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+            
+            try: await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
+            except: pass
+        return
+
     # Admin Routing 
     if query.data == "admin_home" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         await show_admin_panel(update, context)
@@ -447,6 +568,9 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await query.message.edit_text("🎛️ **KEYBOARD BUTTON EDITOR**", reply_markup=get_admin_keyboards_menu(), parse_mode="Markdown")
     elif query.data == "admin_tiers" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         await query.message.edit_text("💰 **TIER CONFIGURATION**\nManage your subscription bases here:", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
+    elif query.data == "admin_broadcast" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+        USER_STATES[user_id] = "awaiting_broadcast_message"
+        await query.message.edit_text(f"📢 **BROADCAST SYSTEM**\n➖➖➖➖➖➖➖➖➖➖\n\nTotal Registered Users: **{len(ALL_USERS)}**\n\n📝 Send the exact message you want to broadcast to all users right now. (Supports text, links, and emojis):", parse_mode="Markdown")
     elif query.data == "add_new_tier" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
         USER_STATES[user_id] = "awaiting_new_tier_label"
         await query.message.edit_text("➕ **ADD NEW TIER**\n\nSend the **Display Name** for the new tier (e.g. `Weekend Pass £10`):", parse_mode="Markdown")
@@ -510,21 +634,22 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         crypto_amount = float(amount) * rates_to_gbp.get(coin, 1.0)
         
         msg = f"💳 **PAYMENT INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n\n🌐 **NETWORK:** {coin}\n⚠️ **WARNING:** Send ONLY **{coin}**.\n\n💰 **AMOUNT DUE:** `{crypto_amount:.4f}` {coin} (£{amount})\n📬 **DEPOSIT ADDRESS:**\n`{addr}`\n\n➖➖➖➖➖➖➖➖➖➖\n⏳ **Status:** Waiting for payment..."
-        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")], [InlineKeyboardButton("📸 Send Screenshot", callback_data="send_screenshot")], [InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]])
+        markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")], [InlineKeyboardButton("📸 Send Screenshot", callback_data=f"send_screenshot_{amount}")], [InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]])
         await safe_send(context, user_id, msg, markup, lang, edit_message=query.message)
         
     elif query.data == "check_payment":
         error_msg = await translate_text("❌ Error: Payment not found on the blockchain. Please allow 5-15 minutes for confirmations, or use 'Send Screenshot' if you have already paid.", lang)
         await query.answer(error_msg, show_alert=True)
         
-    elif query.data == "send_screenshot":
-        USER_STATES[user_id] = "awaiting_screenshot"
-        msg = "📸 **UPLOAD SCREENSHOT**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease send the transaction screenshot/receipt now."
+    elif query.data.startswith("send_screenshot_"):
+        amount = query.data.split("_")[2]
+        USER_STATES[user_id] = f"awaiting_screenshot_{amount}"
+        msg = f"📸 **UPLOAD SCREENSHOT**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease send the transaction screenshot/receipt for **£{amount}** now."
         await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]]), lang, edit_message=query.message)
         
     elif query.data == "faq_ask":
         USER_STATES[user_id] = "awaiting_faq_question"
-        msg = "❓ **ASK A QUESTION**\n📝 PLEASE TYPE YOUR QUESTION BELOW"
+        msg = "❓ **CONTACT SUPPORT**\n📝 PLEASE TYPE YOUR QUESTION OR ISSUE BELOW:"
         await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ CANCEL", callback_data="back_to_main")]]), lang, edit_message=query.message)
 
 def main() -> None:
@@ -533,10 +658,11 @@ def main() -> None:
     # Standard Commands
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin_command))
+    application.add_handler(CommandHandler("reply", reply_command)) 
     application.add_handler(CommandHandler("purchase", purchase_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     
-    # Catch-all Command block (Must be under the real commands)
+    # Catch-all Command block
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command)) 
     
     # Content Listeners

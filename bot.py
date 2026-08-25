@@ -447,13 +447,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         elif balance < REQUIRED_DASHBOARD_BALANCE:
             msg = (
-                f"🛑 **DASHBOARD BLOCKED**\n"
+                f"🛑 **PRIMARY DAILY DASHBOARD**\n"
                 f"➖➖➖➖➖➖➖➖➖➖\n"
-                f"⚠️ **ACCESS DENIED**\n\n"
-                f"Access to the primary dashboard is currently restricted. Your account does not meet the minimum subscription plan required for new users.\n\n"
+                f"⚠️ **ACCESS RESTRICTED**\n\n"
+                f"Access to the Primary Daily Dashboard is currently unavailable on your current Daily plan. Please upgrade to the Weekly plan to continue accessing the dashboard without interruption.\n\n"
                 f"💰 **Current Balance:** £{balance:.2f}\n"
                 f"📋 **Required Plan:** £{REQUIRED_DASHBOARD_BALANCE:.2f}\n\n"
-                f"💳 **Please activate your account to proceed.**"
+                f"💳 **Once your account meets the requirements, dashboard access will be restored automatically.**"
             )
             await safe_send(context, user_id, msg, markup, lang)
             

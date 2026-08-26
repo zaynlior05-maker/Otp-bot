@@ -3,6 +3,8 @@ import logging
 import asyncio
 import json
 import random
+import urllib.request
+import urllib.error
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 from deep_translator import GoogleTranslator
@@ -113,6 +115,39 @@ def register_user(user_id):
 def get_user_display(user):
     username = f" (@{user.username})" if user.username else ""
     return f"{user.first_name}{username}"
+
+# --- Live Crypto API Engine ---
+async def get_live_crypto_rates():
+    def fetch():
+        try:
+            url = "https://api.coingecko.com/api/v3/simple/price?ids=litecoin,bitcoin,tether,ethereum,solana&vs_currencies=gbp"
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                return {
+                    "LTC": 1 / data.get("litecoin", {}).get("gbp", 36.8),
+                    "BTC": 1 / data.get("bitcoin", {}).get("gbp", 45000),
+                    "USDT-TRC20": 1 / data.get("tether", {}).get("gbp", 0.78),
+                    "USDT-ERC20": 1 / data.get("tether", {}).get("gbp", 0.78),
+                    "ETH": 1 / data.get("ethereum", {}).get("gbp", 2200),
+                    "SOL": 1 / data.get("solana", {}).get("gbp", 110)
+                }
+        except Exception as e:
+            logger.error(f"Live API failed: {e}")
+            return None
+            
+    rates = await asyncio.to_thread(fetch)
+    if not rates:
+        # Fallback to accurate approximations if API temporarily fails
+        rates = {
+            "LTC": 1 / 36.8, 
+            "BTC": 1 / 45000.0,
+            "USDT-TRC20": 1 / 0.78,
+            "USDT-ERC20": 1 / 0.78,
+            "ETH": 1 / 2200.0,
+            "SOL": 1 / 110.0
+        }
+    return rates
 
 # --- Translation Engine ---
 async def translate_text(text, lang):
@@ -433,13 +468,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if balance == 0.0:
             msg = (
-                "🕶️ **HEISEN OTP BOT | DASHBOARD** 🕶️\n"
+                "🕶️ **RDX OTP BOT | DASHBOARD** 🕶️\n"
                 "➖➖➖➖➖➖➖➖➖➖\n\n"
                 "╭ ❌ **ACCESS DENIED**\n"
                 "├ 💳 **NO ACTIVE SUBSCRIPTION**\n"
                 "╰ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
                 "➖➖➖➖➖➖➖➖➖➖\n"
-                "🕶️ **HEISEN OTP BOT** 🕶️"
+                "🕶️ **RDX OTP BOT** 🕶️"
             )
             await safe_send(context, user_id, msg, markup, lang)
             
@@ -644,7 +679,8 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
                 f"🪙 **SELECT CRYPTO TO PAY DIFFERENCE:**\n"
                 f"➖➖➖➖➖➖➖➖➖➖\n"
                 f"📈 **Target Plan:** £{tier_target:.2f}\n"
-                f"💰 **Previous Balance:** -£{current_bal:.2f}\n"
+                f"💰 **Current Balance:** £{current_bal:.2f}\n"
+                f"📉 **Upgrade Discount:** -£{current_bal:.2f}\n"
                 f"➖➖➖➖➖➖➖➖➖➖\n"
                 f"💳 **TOTAL DUE:** £{display_due}"
             )
@@ -672,9 +708,10 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await notify_admin(context, message=f"🧾 **INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n👤 **User:** {user_display} (`{user_id}`)\n💰 **Amount:** £{amount}\n🪙 **Coin:** {coin}")
         
         await safe_send(context, user_id, "⏳ *Generating invoice...*", lang=lang, edit_message=query.message)
-        await asyncio.sleep(1)
         
-        rates_to_gbp = {"LTC": 0.018, "BTC": 0.000021, "USDT-TRC20": 1.28, "USDT-ERC20": 1.28, "ETH": 0.00038, "SOL": 0.0085}
+        # Add live API call
+        rates_to_gbp = await get_live_crypto_rates()
+        
         addr = {"LTC": LTC_ADDRESS, "BTC": BTC_ADDRESS, "USDT-TRC20": USDT_TRC20_ADDRESS, "USDT-ERC20": USDT_ERC20_ADDRESS, "ETH": ETH_ADDRESS, "SOL": SOL_ADDRESS}.get(coin, "N/A")
         
         buffered_amount_gbp = float(amount) * CRYPTO_BUFFER_MULTIPLIER

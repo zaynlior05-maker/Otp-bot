@@ -467,13 +467,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if balance == 0.0:
             msg = (
-                "🕶️ **RDX OTP BOT | DASHBOARD** 🕶️\n"
+                "🕶️ **HEISEN OTP BOT | DASHBOARD** 🕶️\n"
                 "➖➖➖➖➖➖➖➖➖➖\n\n"
                 "╭ ❌ **ACCESS DENIED**\n"
                 "├ 💳 **NO ACTIVE SUBSCRIPTION**\n"
                 "╰ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
                 "➖➖➖➖➖➖➖➖➖➖\n"
-                "🕶️ **RDX OTP BOT** 🕶️"
+                "🕶️ **HEISEN OTP BOT** 🕶️"
             )
             await safe_send(context, user_id, msg, markup, lang)
             

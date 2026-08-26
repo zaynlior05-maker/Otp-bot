@@ -455,7 +455,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
     f"❌ **Status:** Not eligible for dashboard access\n\n"
     f"📋 **Required Plan:** Weekly — £300\n"
     f"✅ **Status:** Eligible for dashboard access\n\n"
-    f"To restore access to the Primary Daily Dashboard, please upgrade your subscription from **Daily to Weekly**.\n\n"
+    f"To restore access to the Dashboard, please upgrade your subscription from **Daily to Weekly**.\n\n"
     f"💳 **Once your upgrade is completed, dashboard access will be restored automatically.**"
 )
             await safe_send(context, user_id, msg, markup, lang)

@@ -32,6 +32,7 @@ SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 
 # System Configurations
 REQUIRED_DASHBOARD_BALANCE = 300.0  
+CRYPTO_BUFFER_MULTIPLIER = 1.04  # Adds 4% extra to cover fees/fluctuations
 
 # Global Memory Variables
 ADMINS = set()
@@ -172,9 +173,8 @@ def get_main_menu():
 
 def get_admin_main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📝 Edit Messages", callback_data="admin_templates"), InlineKeyboardButton("🎛️ Edit Main Menus", callback_data="admin_keyboards")], 
-        [InlineKeyboardButton("💰 Manage Subscription Tiers", callback_data="admin_tiers")],
-        [InlineKeyboardButton("📢 Broadcast Message", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("📝 Edit Messages", callback_data="admin_templates"), InlineKeyboardButton("🎛️ Edit Menus", callback_data="admin_keyboards")], 
+        [InlineKeyboardButton("💰 Manage Tiers", callback_data="admin_tiers"), InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")],
         [InlineKeyboardButton("❌ Close Menu", callback_data="admin_logout")]
     ])
 
@@ -242,7 +242,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
 async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Answers a specific user via ID."""
     user_id = update.effective_user.id
     if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
         
@@ -261,7 +260,6 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Directly messages a specific user via ID."""
     user_id = update.effective_user.id
     if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
         
@@ -447,17 +445,17 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         elif balance < REQUIRED_DASHBOARD_BALANCE:
             msg = (
-    f"🚫 **PRIMARY DAILY DASHBOARD — TEST ACCESS RESTRICTED**\n"
-    f"➖➖➖➖➖➖➖➖➖➖\n"
-    f"⚠️ **ACCESS RESTRICTED**\n\n"
-    f"Access to the Primary Daily Dashboard for system testing is currently restricted due to increased usage. Dashboard access has been moved from the Daily plan to the Weekly plan.\n\n"
-    f"💷 **Current Plan:** Daily — £55\n"
-    f"❌ **Status:** Not eligible for dashboard access\n\n"
-    f"📋 **Required Plan:** Weekly — £300\n"
-    f"✅ **Status:** Eligible for dashboard access\n\n"
-    f"To restore access to the Dashboard, please upgrade your subscription from **Daily to Weekly**.\n\n"
-    f"💳 **Once your upgrade is completed, dashboard access will be restored automatically.**"
-)
+                f"🚫 **PRIMARY DAILY DASHBOARD — ACCESS RESTRICTED**\n"
+                f"➖➖➖➖➖➖➖➖➖➖\n"
+                f"⚠️ **ACCESS RESTRICTED**\n\n"
+                f"Access to the Primary Daily Dashboard is currently restricted due to increased usage. Dashboard access has been moved from the Daily plan to the Weekly plan.\n\n"
+                f"💷 **Current Plan:** Daily — £{balance:.2f}\n"
+                f"❌ **Status:** Not eligible for dashboard access\n\n"
+                f"📋 **Required Plan:** Weekly — £{REQUIRED_DASHBOARD_BALANCE:.2f}\n"
+                f"✅ **Status:** Eligible for dashboard access\n\n"
+                f"To restore access to the Dashboard, please upgrade your subscription from **Daily to Weekly**.\n\n"
+                f"💳 **Once your upgrade is completed, dashboard access will be restored automatically.**"
+            )
             await safe_send(context, user_id, msg, markup, lang)
             
         else:
@@ -554,6 +552,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            await query.answer("✅ Payment Approved!", show_alert=False)
             parts = query.data.split("_")
             target_user = parts[2]
             amount = float(parts[3])
@@ -570,6 +569,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
     elif query.data.startswith("reject_payment_"):
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+            await query.answer("❌ Payment Rejected!", show_alert=False)
             target_user = query.data.split("_")[2]
             await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
             
@@ -647,9 +647,12 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         await safe_send(context, user_id, "⏳ *Generating invoice...*", lang=lang, edit_message=query.message)
         await asyncio.sleep(1)
         
-        addr = {"LTC": LTC_ADDRESS, "BTC": BTC_ADDRESS, "USDT-TRC20": USDT_TRC20_ADDRESS, "USDT-ERC20": USDT_ERC20_ADDRESS, "ETH": ETH_ADDRESS, "SOL": SOL_ADDRESS}.get(coin, "N/A")
         rates_to_gbp = {"LTC": 0.018, "BTC": 0.000021, "USDT-TRC20": 1.28, "USDT-ERC20": 1.28, "ETH": 0.00038, "SOL": 0.0085}
-        crypto_amount = float(amount) * rates_to_gbp.get(coin, 1.0)
+        addr = {"LTC": LTC_ADDRESS, "BTC": BTC_ADDRESS, "USDT-TRC20": USDT_TRC20_ADDRESS, "USDT-ERC20": USDT_ERC20_ADDRESS, "ETH": ETH_ADDRESS, "SOL": SOL_ADDRESS}.get(coin, "N/A")
+        
+        # Add ~4% buffer to the base amount so £55 acts like £57.20 worth of crypto
+        buffered_amount_gbp = float(amount) * CRYPTO_BUFFER_MULTIPLIER
+        crypto_amount = buffered_amount_gbp * rates_to_gbp.get(coin, 1.0)
         
         msg = f"💳 **PAYMENT INVOICE GENERATED**\n➖➖➖➖➖➖➖➖➖➖\n\n🌐 **NETWORK:** {coin}\n⚠️ **WARNING:** Send ONLY **{coin}**.\n\n💰 **AMOUNT DUE:** `{crypto_amount:.4f}` {coin} (£{amount})\n📬 **DEPOSIT ADDRESS:**\n`{addr}`\n\n➖➖➖➖➖➖➖➖➖➖\n⏳ **Status:** Waiting for payment..."
         markup = InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Check Payment", callback_data="check_payment")], [InlineKeyboardButton("📸 Send Screenshot", callback_data=f"send_screenshot_{amount}")], [InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]])

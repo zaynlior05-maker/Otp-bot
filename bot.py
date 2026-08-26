@@ -138,7 +138,6 @@ async def get_live_crypto_rates():
             
     rates = await asyncio.to_thread(fetch)
     if not rates:
-        # Fallback to accurate approximations if API temporarily fails
         rates = {
             "LTC": 1 / 36.8, 
             "BTC": 1 / 45000.0,
@@ -575,7 +574,8 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     user_display = get_user_display(user)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
-    if not query.data.startswith("coin_") and query.data != "check_payment":
+    # FIX IS HERE: We added specific checks to bypass the silent answer for the Approval/Rejection buttons.
+    if not query.data.startswith("coin_") and query.data != "check_payment" and not query.data.startswith("approve_payment_") and not query.data.startswith("reject_payment_"):
         await query.answer()
 
     if query.data == "back_to_main":
@@ -709,7 +709,6 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         
         await safe_send(context, user_id, "⏳ *Generating invoice...*", lang=lang, edit_message=query.message)
         
-        # Add live API call
         rates_to_gbp = await get_live_crypto_rates()
         
         addr = {"LTC": LTC_ADDRESS, "BTC": BTC_ADDRESS, "USDT-TRC20": USDT_TRC20_ADDRESS, "USDT-ERC20": USDT_ERC20_ADDRESS, "ETH": ETH_ADDRESS, "SOL": SOL_ADDRESS}.get(coin, "N/A")

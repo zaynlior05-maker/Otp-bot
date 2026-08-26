@@ -32,7 +32,7 @@ SOL_ADDRESS = os.getenv("SOL_ADDRESS", "YOUR_SOL_ADDRESS_NOT_SET")
 
 # System Configurations
 REQUIRED_DASHBOARD_BALANCE = 300.0  
-CRYPTO_BUFFER_MULTIPLIER = 1.04  # Adds 4% extra to cover fees/fluctuations
+CRYPTO_BUFFER_MULTIPLIER = 1.04  # Adds extra to cover fees/fluctuations
 
 # Global Memory Variables
 ADMINS = set()
@@ -617,7 +617,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         ADMINS.discard(user_id)
         await query.message.edit_text("🚪 **Logged out.**", parse_mode="Markdown")
             
-    # User Routing 
+    # --- DYNAMIC UPGRADE LOGIC ---
     elif query.data == "trigger_payment":
         await safe_send(context, user_id, DYNAMIC_TEXT["activate"], get_tiers_markup(), lang, edit_message=query.message)
         
@@ -627,12 +627,39 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         
     elif query.data.startswith("amt_val_"):
         idx = int(query.data.replace("amt_val_", ""))
-        amount = SUBSCRIPTION_TIERS[idx]["val"]
-        msg = "🪙 **SELECT CRYPTO:**"
+        tier_target = float(SUBSCRIPTION_TIERS[idx]["val"])
+        current_bal = USER_BALANCES.get(str(user_id), 0.0)
+        
+        amount_due = tier_target - current_bal
+        
+        if amount_due <= 0:
+            msg = "✅ **TIER ALREADY UNLOCKED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour current balance is already sufficient for this tier."
+            await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("🔙 BACK", callback_data="back_to_main")]]), lang, edit_message=query.message)
+            return
+            
+        display_due = f"{amount_due:.2f}".rstrip('0').rstrip('.')
+        
+        if current_bal > 0:
+            msg = (
+                f"🪙 **SELECT CRYPTO TO PAY DIFFERENCE:**\n"
+                f"➖➖➖➖➖➖➖➖➖➖\n"
+                f"📈 **Target Plan:** £{tier_target:.2f}\n"
+                f"💰 **Previous Balance:** -£{current_bal:.2f}\n"
+                f"➖➖➖➖➖➖➖➖➖➖\n"
+                f"💳 **TOTAL DUE:** £{display_due}"
+            )
+        else:
+            msg = (
+                f"🪙 **SELECT CRYPTO TO PAY:**\n"
+                f"➖➖➖➖➖➖➖➖➖➖\n"
+                f"📈 **Target Plan:** £{tier_target:.2f}\n"
+                f"💳 **TOTAL DUE:** £{display_due}"
+            )
+            
         markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("LTC", callback_data=f"coin_LTC_{amount}"), InlineKeyboardButton("BTC", callback_data=f"coin_BTC_{amount}")],
-            [InlineKeyboardButton("USDT (TRC20)", callback_data=f"coin_USDT-TRC20_{amount}"), InlineKeyboardButton("USDT (ERC20)", callback_data=f"coin_USDT-ERC20_{amount}")],
-            [InlineKeyboardButton("ETH", callback_data=f"coin_ETH_{amount}"), InlineKeyboardButton("SOL", callback_data=f"coin_SOL_{amount}")],
+            [InlineKeyboardButton("LTC", callback_data=f"coin_LTC_{display_due}"), InlineKeyboardButton("BTC", callback_data=f"coin_BTC_{display_due}")],
+            [InlineKeyboardButton("USDT (TRC20)", callback_data=f"coin_USDT-TRC20_{display_due}"), InlineKeyboardButton("USDT (ERC20)", callback_data=f"coin_USDT-ERC20_{display_due}")],
+            [InlineKeyboardButton("ETH", callback_data=f"coin_ETH_{display_due}"), InlineKeyboardButton("SOL", callback_data=f"coin_SOL_{display_due}")],
             [InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]
         ])
         await safe_send(context, user_id, msg, markup, lang, edit_message=query.message)
@@ -650,7 +677,6 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         rates_to_gbp = {"LTC": 0.018, "BTC": 0.000021, "USDT-TRC20": 1.28, "USDT-ERC20": 1.28, "ETH": 0.00038, "SOL": 0.0085}
         addr = {"LTC": LTC_ADDRESS, "BTC": BTC_ADDRESS, "USDT-TRC20": USDT_TRC20_ADDRESS, "USDT-ERC20": USDT_ERC20_ADDRESS, "ETH": ETH_ADDRESS, "SOL": SOL_ADDRESS}.get(coin, "N/A")
         
-        # Add ~4% buffer to the base amount so £55 acts like £57.20 worth of crypto
         buffered_amount_gbp = float(amount) * CRYPTO_BUFFER_MULTIPLIER
         crypto_amount = buffered_amount_gbp * rates_to_gbp.get(coin, 1.0)
         

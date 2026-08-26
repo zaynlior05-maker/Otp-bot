@@ -585,52 +585,51 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
-            try:
-                await query.answer("✅ Payment Approved!", show_alert=False)
-                parts = query.data.split("_")
-                target_user = parts[2]
-                amount = float(parts[3])
-                
-                current_bal = USER_BALANCES.get(str(target_user), 0.0)
-                USER_BALANCES[str(target_user)] = current_bal + amount
-                save_data()
-                
-                # Update image and lock out the buttons (reply_markup=None)
-                await query.edit_message_caption(
-                    caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**",
-                    reply_markup=None
-                )
-                
-                try: 
-                    await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
-                except: pass
-            except Exception as e:
-                logger.error(f"Approval error: {e}")
-        else:
-            # If session is erased by Railway, this pop up tells you why it failed
-            await query.answer("❌ Unauthorized: Type /admin in the bot to login first.", show_alert=True)
+        # NEW SECURITY: We allow the click if it's the admin OR if it is clicked inside the log channel itself!
+        is_admin = (user_id in ADMINS) or (str(user_id) == str(ADMIN_ID)) or (str(query.message.chat.id) == str(GROUP_LOG_ID))
+        
+        if not is_admin:
+            await query.answer("❌ Access Denied: You are not authorized to approve payments.", show_alert=True)
+            return
+
+        try:
+            await query.answer("✅ Payment Approved!", show_alert=False)
+            parts = query.data.split("_")
+            target_user = parts[2]
+            amount = float(parts[3])
+            
+            current_bal = USER_BALANCES.get(str(target_user), 0.0)
+            USER_BALANCES[str(target_user)] = current_bal + amount
+            save_data()
+            
+            await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
+            
+            try: 
+                await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
+            except: pass
+        except Exception as e:
+            logger.error(f"Approval error: {e}")
+            await query.answer("❌ Error processing approval.", show_alert=True)
         return
 
     elif query.data.startswith("reject_payment_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
-            try:
-                await query.answer("❌ Payment Rejected!", show_alert=False)
-                target_user = query.data.split("_")[2]
-                
-                # Update image and lock out the buttons
-                await query.edit_message_caption(
-                    caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**",
-                    reply_markup=None
-                )
-                
-                try: 
-                    await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
-                except: pass
-            except Exception as e:
-                logger.error(f"Rejection error: {e}")
-        else:
-            await query.answer("❌ Unauthorized: Type /admin in the bot to login first.", show_alert=True)
+        is_admin = (user_id in ADMINS) or (str(user_id) == str(ADMIN_ID)) or (str(query.message.chat.id) == str(GROUP_LOG_ID))
+        
+        if not is_admin:
+            await query.answer("❌ Access Denied: You are not authorized to reject payments.", show_alert=True)
+            return
+            
+        try:
+            await query.answer("❌ Payment Rejected!", show_alert=False)
+            target_user = query.data.split("_")[2]
+            await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+            
+            try: 
+                await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
+            except: pass
+        except Exception as e:
+            logger.error(f"Rejection error: {e}")
+            await query.answer("❌ Error processing rejection.", show_alert=True)
         return
 
     # Admin Routing 

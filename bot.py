@@ -288,10 +288,16 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     message_content = " ".join(args[1:])
     
     try:
+        # Try sending with Markdown formatting
         await context.bot.send_message(chat_id=target_user, text=f"📩 **SUPPORT RESPONSE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
         await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}`.**", parse_mode="Markdown")
-    except:
-        await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
+    except Exception as e:
+        # If Markdown fails (due to links/usernames), send plain text
+        try:
+            await context.bot.send_message(chat_id=target_user, text=f"📩 SUPPORT RESPONSE\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}")
+            await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}` (Format stripped due to link constraints).**", parse_mode="Markdown")
+        except:
+            await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -308,8 +314,12 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         await context.bot.send_message(chat_id=target_user, text=f"📩 **ADMIN MESSAGE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
         await update.message.reply_text(f"✅ **Message successfully sent to user `{target_user}`.**", parse_mode="Markdown")
-    except:
-        await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
+    except Exception as e:
+        try:
+            await context.bot.send_message(chat_id=target_user, text=f"📩 ADMIN MESSAGE\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}")
+            await update.message.reply_text(f"✅ **Message successfully sent to user `{target_user}` (Format stripped due to link constraints).**", parse_mode="Markdown")
+        except:
+            await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
 async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -372,7 +382,15 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await context.bot.send_message(chat_id=uid, text=f"📢 **GLOBAL ANNOUNCEMENT**\n➖➖➖➖➖➖➖➖➖➖\n\n{text}", parse_mode="Markdown")
                     success_count += 1
                     await asyncio.sleep(0.05) 
-                except: pass 
+                except Exception as e:
+                    try:
+                        # Fallback for links and unescaped Markdown issues
+                        fallback_text = f"📢 GLOBAL ANNOUNCEMENT\n➖➖➖➖➖➖➖➖➖➖\n\n{text}"
+                        await context.bot.send_message(chat_id=uid, text=fallback_text)
+                        success_count += 1
+                        await asyncio.sleep(0.05)
+                    except:
+                        pass # User truly blocked bot
             await update.message.reply_text(f"✅ **BROADCAST COMPLETE**\nSuccessfully delivered to {success_count} users.", parse_mode="Markdown")
             await show_admin_panel(update, context)
         return
@@ -467,13 +485,13 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         if balance == 0.0:
             msg = (
-                "🕶️ **HEISEN OTP BOT | DASHBOARD** 🕶️\n"
+                "🕶️ **RDX OTP BOT | DASHBOARD** 🕶️\n"
                 "➖➖➖➖➖➖➖➖➖➖\n\n"
                 "╭ ❌ **ACCESS DENIED**\n"
                 "├ 💳 **NO ACTIVE SUBSCRIPTION**\n"
                 "╰ 🛒 **PURCHASE A PLAN TO CONTINUE**\n\n"
                 "➖➖➖➖➖➖➖➖➖➖\n"
-                "🕶️ **HEISEN OTP BOT** 🕶️"
+                "🕶️ **RDX OTP BOT** 🕶️"
             )
             await safe_send(context, user_id, msg, markup, lang)
             
@@ -585,14 +603,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
-        # NEW SECURITY: We allow the click if it's the admin OR if it is clicked inside the log channel itself!
-        is_admin = (user_id in ADMINS) or (str(user_id) == str(ADMIN_ID)) or (str(query.message.chat.id) == str(GROUP_LOG_ID))
-        
-        if not is_admin:
-            await query.answer("❌ Access Denied: You are not authorized to approve payments.", show_alert=True)
-            return
-
-        try:
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             await query.answer("✅ Payment Approved!", show_alert=False)
             parts = query.data.split("_")
             target_user = parts[2]
@@ -604,32 +615,18 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             
             await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
             
-            try: 
-                await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
+            try: await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
             except: pass
-        except Exception as e:
-            logger.error(f"Approval error: {e}")
-            await query.answer("❌ Error processing approval.", show_alert=True)
         return
 
     elif query.data.startswith("reject_payment_"):
-        is_admin = (user_id in ADMINS) or (str(user_id) == str(ADMIN_ID)) or (str(query.message.chat.id) == str(GROUP_LOG_ID))
-        
-        if not is_admin:
-            await query.answer("❌ Access Denied: You are not authorized to reject payments.", show_alert=True)
-            return
-            
-        try:
+        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
             await query.answer("❌ Payment Rejected!", show_alert=False)
             target_user = query.data.split("_")[2]
             await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
             
-            try: 
-                await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
+            try: await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
             except: pass
-        except Exception as e:
-            logger.error(f"Rejection error: {e}")
-            await query.answer("❌ Error processing rejection.", show_alert=True)
         return
 
     # Admin Routing 

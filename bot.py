@@ -38,6 +38,9 @@ CRYPTO_BUFFER_MULTIPLIER = 1.04  # Adds extra to cover fees/fluctuations
 
 # Global Memory Variables
 ADMINS = set()
+if ADMIN_ID:
+    ADMINS.add(int(ADMIN_ID))
+
 USER_STATES = {}
 USER_LANGUAGES = {} 
 TEMP_TIER = {} 
@@ -115,6 +118,9 @@ def register_user(user_id):
 def get_user_display(user):
     username = f" (@{user.username})" if user.username else ""
     return f"{user.first_name}{username}"
+
+def is_admin(user_id):
+    return user_id in ADMINS or str(user_id) == str(ADMIN_ID)
 
 # --- Live Crypto API Engine ---
 async def get_live_crypto_rates():
@@ -270,14 +276,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id in ADMINS or str(user_id) == str(ADMIN_ID): await show_admin_panel(update, context)
+    if is_admin(user_id) or user_id in ADMINS: 
+        await show_admin_panel(update, context)
     else:
         USER_STATES[user_id] = "awaiting_admin_password"
         await update.message.reply_text("🔒 **ADMIN AUTHENTICATION**\n\nEnter the admin password to continue:", parse_mode="Markdown")
 
 async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    if not is_admin(user_id): return
         
     args = context.args
     if len(args) < 2:
@@ -299,7 +306,7 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    if not is_admin(user_id): return
         
     args = context.args
     if len(args) < 2:
@@ -319,10 +326,12 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         except:
             await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
-# --- NEW BALANCE MANAGEMENT ADMIN COMMANDS ---
+# --- BALANCE MANAGEMENT ADMIN COMMANDS ---
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ **Access Denied:** You are not authorized to use admin commands.", parse_mode="Markdown")
+        return
     
     args = context.args
     if len(args) < 1:
@@ -335,7 +344,9 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def addbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ **Access Denied:** You are not authorized to use admin commands.", parse_mode="Markdown")
+        return
     
     args = context.args
     if len(args) < 2:
@@ -362,7 +373,9 @@ async def addbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def deductbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
-    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    if not is_admin(user_id):
+        await update.message.reply_text("❌ **Access Denied:** You are not authorized to use admin commands.", parse_mode="Markdown")
+        return
     
     args = context.args
     if len(args) < 2:
@@ -431,7 +444,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
             USER_STATES[user_id] = None
             try: await update.message.delete()
             except: pass
-            await update.message.reply_text("✅ **Access Granted.**", parse_mode="Markdown")
+            await update.message.reply_text("✅ **Access Granted! You are now authenticated as an admin.**", parse_mode="Markdown")
             await show_admin_panel(update, context)
         else:
             USER_STATES[user_id] = None
@@ -439,7 +452,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     elif current_state == "awaiting_broadcast_message":
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             USER_STATES[user_id] = None
             await update.message.reply_text(f"🚀 **BROADCAST INITIATED**\nSending message to {len(ALL_USERS)} users...", parse_mode="Markdown")
             success_count = 0
@@ -461,14 +474,14 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
         
     elif current_state == "awaiting_new_tier_label":
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             TEMP_TIER[user_id] = {"label": text}
             USER_STATES[user_id] = "awaiting_new_tier_val"
             await update.message.reply_text("✅ Label saved.\n\nNow, send the numeric **PRICE VALUE** for this tier (e.g. `30`):", parse_mode="Markdown")
         return
         
     elif current_state == "awaiting_new_tier_val":
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             TEMP_TIER[user_id]["val"] = text.strip()
             SUBSCRIPTION_TIERS.append(TEMP_TIER[user_id])
             save_data() 
@@ -478,7 +491,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
         
     elif current_state and current_state.startswith("edit_tier_label_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             idx = int(current_state.replace("edit_tier_label_", ""))
             SUBSCRIPTION_TIERS[idx]["label"] = text
             save_data() 
@@ -488,7 +501,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     elif current_state and current_state.startswith("edit_tier_val_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             idx = int(current_state.replace("edit_tier_val_", ""))
             SUBSCRIPTION_TIERS[idx]["val"] = text.strip()
             save_data() 
@@ -512,7 +525,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     elif current_state and current_state.startswith("awaiting_edit_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             template_key = current_state.replace("awaiting_edit_", "")
             DYNAMIC_TEXT[template_key] = text
             save_data() 
@@ -522,7 +535,7 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     elif current_state and current_state.startswith("awaiting_kbtn_"):
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             label_key = current_state.replace("awaiting_kbtn_", "")
             BUTTON_LABELS[label_key] = text
             save_data() 
@@ -660,7 +673,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
         await query.answer("✅ Payment Approved!", show_alert=False)
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             parts = query.data.split("_")
             target_user = parts[2]
             amount = float(parts[3])
@@ -682,7 +695,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
 
     elif query.data.startswith("reject_payment_"):
         await query.answer("❌ Payment Rejected!", show_alert=False)
-        if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
+        if is_admin(user_id):
             target_user = query.data.split("_")[2]
             try:
                 await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
@@ -705,38 +718,38 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         return
 
     # Admin Routing 
-    if query.data == "admin_home" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    if query.data == "admin_home" and is_admin(user_id):
         await show_admin_panel(update, context)
-    elif query.data == "admin_templates" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data == "admin_templates" and is_admin(user_id):
         await query.message.edit_text("⚙️ **TEMPLATE EDITOR**", reply_markup=get_admin_templates_menu(), parse_mode="Markdown")
-    elif query.data == "admin_keyboards" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data == "admin_keyboards" and is_admin(user_id):
         await query.message.edit_text("🎛️ **KEYBOARD BUTTON EDITOR**", reply_markup=get_admin_keyboards_menu(), parse_mode="Markdown")
-    elif query.data == "admin_tiers" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data == "admin_tiers" and is_admin(user_id):
         await query.message.edit_text("💰 **TIER CONFIGURATION**\nManage your subscription bases here:", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
-    elif query.data == "admin_broadcast" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data == "admin_broadcast" and is_admin(user_id):
         USER_STATES[user_id] = "awaiting_broadcast_message"
         await query.message.edit_text(f"📢 **BROADCAST SYSTEM**\n➖➖➖➖➖➖➖➖➖➖\n\nTotal Registered Users: **{len(ALL_USERS)}**\n\n📝 Send the exact message you want to broadcast to all users right now. (Supports text, links, and emojis):", parse_mode="Markdown")
-    elif query.data == "add_new_tier" and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data == "add_new_tier" and is_admin(user_id):
         USER_STATES[user_id] = "awaiting_new_tier_label"
         await query.message.edit_text("➕ **ADD NEW TIER**\n\nSend the **Display Name** for the new tier (e.g. `Weekend Pass £10`):", parse_mode="Markdown")
-    elif query.data.startswith("del_tier_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data.startswith("del_tier_") and is_admin(user_id):
         idx = int(query.data.replace("del_tier_", ""))
         SUBSCRIPTION_TIERS.pop(idx)
         save_data() 
         await query.message.edit_text("✅ **Tier Deleted.**", reply_markup=get_admin_tiers_menu(), parse_mode="Markdown")
-    elif query.data.startswith("edit_tier_label_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data.startswith("edit_tier_label_") and is_admin(user_id):
         idx = query.data.replace("edit_tier_label_", "")
         USER_STATES[user_id] = f"edit_tier_label_{idx}"
         await query.message.edit_text("✏️ Send the new **Display Name** for this tier:", parse_mode="Markdown")
-    elif query.data.startswith("edit_tier_val_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data.startswith("edit_tier_val_") and is_admin(user_id):
         idx = query.data.replace("edit_tier_val_", "")
         USER_STATES[user_id] = f"edit_tier_val_{idx}"
         await query.message.edit_text("💵 Send the new **Numeric Price Value** for this tier (e.g. `30`):", parse_mode="Markdown")
-    elif query.data.startswith("edit_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data.startswith("edit_") and is_admin(user_id):
         template_key = query.data.replace("edit_", "")
         USER_STATES[user_id] = f"awaiting_edit_{template_key}"
         await query.message.edit_text(f"📝 Send the new text body structure for `{template_key.upper()}`:", parse_mode="Markdown")
-    elif query.data.startswith("kbtn_") and (user_id in ADMINS or str(user_id) == str(ADMIN_ID)):
+    elif query.data.startswith("kbtn_") and is_admin(user_id):
         label_key = query.data.replace("kbtn_", "")
         USER_STATES[user_id] = f"awaiting_kbtn_{label_key}"
         await query.message.edit_text(f"🎛️ Send the text you want to label button component `{label_key}` with:", parse_mode="Markdown")
@@ -820,7 +833,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         amount = query.data.split("_")[2]
         USER_STATES[user_id] = f"awaiting_screenshot_{amount}"
         msg = f"📸 **UPLOAD SCREENSHOT**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease send the transaction screenshot/receipt for **£{amount}** now."
-        await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]]), lang, edit_message=query.message)
+        await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]] ), lang, edit_message=query.message)
         
     elif query.data == "faq_ask":
         USER_STATES[user_id] = "awaiting_faq_question"

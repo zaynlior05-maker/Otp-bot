@@ -319,6 +319,74 @@ async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         except:
             await update.message.reply_text(f"❌ **Failed to send message:** User may have blocked the bot or ID is incorrect.", parse_mode="Markdown")
 
+# --- NEW BALANCE MANAGEMENT ADMIN COMMANDS ---
+async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    
+    args = context.args
+    if len(args) < 1:
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/balance <user_id>`", parse_mode="Markdown")
+        return
+        
+    target_user = str(args[0])
+    bal = USER_BALANCES.get(target_user, 0.0)
+    await update.message.reply_text(f"👤 **User ID:** `{target_user}`\n💰 **Current Balance:** £{bal:.2f}", parse_mode="Markdown")
+
+async def addbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/addbalance <user_id> <amount>`", parse_mode="Markdown")
+        return
+        
+    target_user = str(args[0])
+    try:
+        amount = float(args[1])
+    except ValueError:
+        await update.message.reply_text("⚠️ **Error:** Amount must be a valid number.", parse_mode="Markdown")
+        return
+        
+    current_bal = USER_BALANCES.get(target_user, 0.0)
+    new_bal = current_bal + amount
+    USER_BALANCES[target_user] = new_bal
+    save_data()
+    
+    await update.message.reply_text(f"✅ **Balance Updated Successfully**\n👤 **User ID:** `{target_user}`\n➕ **Added:** £{amount:.2f}\n💰 **New Balance:** £{new_bal:.2f}", parse_mode="Markdown")
+    try:
+        await context.bot.send_message(chat_id=target_user, text=f"🎉 **BALANCE UPDATED**\n➖➖➖➖➖➖➖➖➖➖\nAn admin has added **£{amount:.2f}** to your account balance!\n💰 **New Balance:** £{new_bal:.2f}", parse_mode="Markdown")
+    except:
+        pass
+
+async def deductbalance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    if user_id not in ADMINS and str(user_id) != str(ADMIN_ID): return
+    
+    args = context.args
+    if len(args) < 2:
+        await update.message.reply_text("⚠️ **Format Error**\nPlease use: `/deductbalance <user_id> <amount>`", parse_mode="Markdown")
+        return
+        
+    target_user = str(args[0])
+    try:
+        amount = float(args[1])
+    except ValueError:
+        await update.message.reply_text("⚠️ **Error:** Amount must be a valid number.", parse_mode="Markdown")
+        return
+        
+    current_bal = USER_BALANCES.get(target_user, 0.0)
+    new_bal = max(0.0, current_bal - amount)
+    USER_BALANCES[target_user] = new_bal
+    save_data()
+    
+    await update.message.reply_text(f"✅ **Balance Deducted Successfully**\n👤 **User ID:** `{target_user}`\n➖ **Deducted:** £{amount:.2f}\n💰 **New Balance:** £{new_bal:.2f}", parse_mode="Markdown")
+    try:
+        await context.bot.send_message(chat_id=target_user, text=f"⚠️ **BALANCE UPDATE**\n➖➖➖➖➖➖➖➖➖➖\nAn admin has deducted **£{amount:.2f}** from your account balance.\n💰 **New Balance:** £{new_bal:.2f}", parse_mode="Markdown")
+    except:
+        pass
+
 async def purchase_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
     register_user(user_id)
@@ -627,7 +695,6 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
                 pass
         return
 
-    # Answer other standard callbacks so they don't spin indefinitely
     if not query.data.startswith("coin_") and query.data != "check_payment":
         await query.answer()
 
@@ -768,6 +835,12 @@ def main() -> None:
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("reply", reply_command)) 
     application.add_handler(CommandHandler("send", send_command)) 
+    
+    # Balance Management Commands
+    application.add_handler(CommandHandler("balance", balance_command))
+    application.add_handler(CommandHandler("addbalance", addbalance_command))
+    application.add_handler(CommandHandler("deductbalance", deductbalance_command))
+    
     application.add_handler(CommandHandler("purchase", purchase_command)) 
     application.add_handler(CommandHandler("help", help_command)) 
     

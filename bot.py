@@ -90,8 +90,17 @@ BUTTON_LABELS = {
 # --- Database Loader & Saver ---
 def load_data():
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f: return json.load(f)
-    return {"templates": DYNAMIC_TEXT, "labels": BUTTON_LABELS, "tiers": SUBSCRIPTION_TIERS, "users": [], "balances": {}}
+        with open(DATA_FILE, "r") as f: 
+            loaded = json.load(f)
+            return loaded.get("templates", DYNAMIC_TEXT), loaded.get("labels", BUTTON_LABELS), loaded.get("tiers", SUBSCRIPTION_TIERS), loaded.get("users", []), loaded.get("balances", {})
+    return DYNAMIC_TEXT, BUTTON_LABELS, SUBSCRIPTION_TIERS, [], {}
+
+templates_data, labels_data, tiers_data, users_data, balances_data = load_data()
+DYNAMIC_TEXT.update(templates_data)
+BUTTON_LABELS.update(labels_data)
+SUBSCRIPTION_TIERS = tiers_data
+ALL_USERS = users_data
+USER_BALANCES = balances_data
 
 def save_data():
     with open(DATA_FILE, "w") as f:
@@ -102,13 +111,6 @@ def save_data():
             "users": ALL_USERS,
             "balances": USER_BALANCES
         }, f)
-
-data = load_data()
-DYNAMIC_TEXT.update(data.get("templates", {}))
-BUTTON_LABELS.update(data.get("labels", {}))
-SUBSCRIPTION_TIERS = data.get("tiers", SUBSCRIPTION_TIERS)
-ALL_USERS = data.get("users", [])
-USER_BALANCES = data.get("balances", {})
 
 def register_user(user_id):
     if user_id not in ALL_USERS:
@@ -672,38 +674,46 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
-        await query.answer("✅ Payment Approved!", show_alert=False)
+        await query.answer("✅ Payment Approved & Balance Topped Up!", show_alert=True)
         if is_admin(user_id):
             parts = query.data.split("_")
-            target_user = parts[2]
+            target_user = str(parts[2])
             amount = float(parts[3])
             
-            current_bal = USER_BALANCES.get(str(target_user), 0.0)
-            USER_BALANCES[str(target_user)] = current_bal + amount
+            # Top up user balance
+            current_bal = USER_BALANCES.get(target_user, 0.0)
+            new_bal = current_bal + amount
+            USER_BALANCES[target_user] = new_bal
             save_data()
             
             try:
-                await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
-            except:
-                pass
+                if query.message.caption:
+                    await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount} ADDED)**")
+                elif query.message.text:
+                    await query.edit_message_text(text=f"{query.message.text}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount} ADDED)**")
+            except Exception as e:
+                logger.error(f"Failed to edit caption/text on approval: {e}")
             
             try: 
-                await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
-            except: 
-                pass
+                await context.bot.send_message(chat_id=int(target_user), text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified! **£{amount}** has been added to your balance.\n💰 **New Balance:** £{new_bal:.2f}", parse_mode="Markdown")
+            except Exception as e:
+                logger.error(f"Failed to notify user {target_user}: {e}")
         return
 
     elif query.data.startswith("reject_payment_"):
-        await query.answer("❌ Payment Rejected!", show_alert=False)
+        await query.answer("❌ Payment Rejected", show_alert=True)
         if is_admin(user_id):
-            target_user = query.data.split("_")[2]
+            target_user = str(query.data.split("_")[2])
             try:
-                await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+                if query.message.caption:
+                    await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+                elif query.message.text:
+                    await query.edit_message_text(text=f"{query.message.text}\n\n❌ **STATUS: REJECTED**")
             except:
                 pass
             
             try: 
-                await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
+                await context.bot.send_message(chat_id=int(target_user), text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
             except: 
                 pass
         return
@@ -833,7 +843,7 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
         amount = query.data.split("_")[2]
         USER_STATES[user_id] = f"awaiting_screenshot_{amount}"
         msg = f"📸 **UPLOAD SCREENSHOT**\n➖➖➖➖➖➖➖➖➖➖\n\nPlease send the transaction screenshot/receipt for **£{amount}** now."
-        await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]] ), lang, edit_message=query.message)
+        await safe_send(context, user_id, msg, InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cancel", callback_data="back_to_main")]]), lang, edit_message=query.message)
         
     elif query.data == "faq_ask":
         USER_STATES[user_id] = "awaiting_faq_question"

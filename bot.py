@@ -288,11 +288,9 @@ async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     message_content = " ".join(args[1:])
     
     try:
-        # Try sending with Markdown formatting
         await context.bot.send_message(chat_id=target_user, text=f"📩 **SUPPORT RESPONSE**\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}", parse_mode="Markdown")
         await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}`.**", parse_mode="Markdown")
     except Exception as e:
-        # If Markdown fails (due to links/usernames), send plain text
         try:
             await context.bot.send_message(chat_id=target_user, text=f"📩 SUPPORT RESPONSE\n➖➖➖➖➖➖➖➖➖➖\n\n{message_content}")
             await update.message.reply_text(f"✅ **Reply successfully sent to user `{target_user}` (Format stripped due to link constraints).**", parse_mode="Markdown")
@@ -384,13 +382,12 @@ async def handle_menu_clicks(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     await asyncio.sleep(0.05) 
                 except Exception as e:
                     try:
-                        # Fallback for links and unescaped Markdown issues
                         fallback_text = f"📢 GLOBAL ANNOUNCEMENT\n➖➖➖➖➖➖➖➖➖➖\n\n{text}"
                         await context.bot.send_message(chat_id=uid, text=fallback_text)
                         success_count += 1
                         await asyncio.sleep(0.05)
                     except:
-                        pass # User truly blocked bot
+                        pass 
             await update.message.reply_text(f"✅ **BROADCAST COMPLETE**\nSuccessfully delivered to {success_count} users.", parse_mode="Markdown")
             await show_admin_panel(update, context)
         return
@@ -592,19 +589,10 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
     user_display = get_user_display(user)
     lang = USER_LANGUAGES.get(user_id, 'en')
     
-    if not query.data.startswith("coin_") and query.data != "check_payment" and not query.data.startswith("approve_payment_") and not query.data.startswith("reject_payment_"):
-        await query.answer()
-
-    if query.data == "back_to_main":
-        USER_STATES[user_id] = None
-        try: await query.message.delete()
-        except: pass
-        return
-
     # --- ADMIN APPROVAL HANDLERS ---
     if query.data.startswith("approve_payment_"):
+        await query.answer("✅ Payment Approved!", show_alert=False)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
-            await query.answer("✅ Payment Approved!", show_alert=False)
             parts = query.data.split("_")
             target_user = parts[2]
             amount = float(parts[3])
@@ -613,20 +601,40 @@ async def handle_inline_callbacks(update: Update, context: ContextTypes.DEFAULT_
             USER_BALANCES[str(target_user)] = current_bal + amount
             save_data()
             
-            await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
+            try:
+                await query.edit_message_caption(caption=f"{query.message.caption}\n\n✅ **STATUS: VERIFIED & APPROVED (£{amount})**")
+            except:
+                pass
             
-            try: await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
-            except: pass
+            try: 
+                await context.bot.send_message(chat_id=target_user, text=f"🎉 **PAYMENT APPROVED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour payment of **£{amount}** has been successfully verified and added to your balance! You can now access the premium features.", parse_mode="Markdown")
+            except: 
+                pass
         return
 
     elif query.data.startswith("reject_payment_"):
+        await query.answer("❌ Payment Rejected!", show_alert=False)
         if user_id in ADMINS or str(user_id) == str(ADMIN_ID):
-            await query.answer("❌ Payment Rejected!", show_alert=False)
             target_user = query.data.split("_")[2]
-            await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+            try:
+                await query.edit_message_caption(caption=f"{query.message.caption}\n\n❌ **STATUS: REJECTED**")
+            except:
+                pass
             
-            try: await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
-            except: pass
+            try: 
+                await context.bot.send_message(chat_id=target_user, text=f"❌ **PAYMENT REJECTED**\n➖➖➖➖➖➖➖➖➖➖\n\nYour recent payment submission could not be verified. If you believe this is an error, please contact support.", parse_mode="Markdown")
+            except: 
+                pass
+        return
+
+    # Answer other standard callbacks so they don't spin indefinitely
+    if not query.data.startswith("coin_") and query.data != "check_payment":
+        await query.answer()
+
+    if query.data == "back_to_main":
+        USER_STATES[user_id] = None
+        try: await query.message.delete()
+        except: pass
         return
 
     # Admin Routing 
